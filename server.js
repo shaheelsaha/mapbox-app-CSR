@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { renderVideo } from './render.js';
 
@@ -10,6 +11,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+app.use(cors()); // Enable CORS for all origins
 app.use(express.static(__dirname));
 app.use(express.json());
 
