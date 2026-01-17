@@ -1,11 +1,16 @@
-# Use Puppeteer base image which comes with Chrome installed
-FROM ghcr.io/puppeteer/puppeteer:21.5.2
+# Use official Node.js image (Debian based)
+FROM node:18
 
-# Switch to root to install system dependencies
-USER root
-
-# Install FFMPEG
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install dependencies for Puppeteer (Chrome) and FFMPEG
+# We use the stable chrome installation instructions for Debian
+RUN apt-get update \
+    && apt-get install -y wget gnupg \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
+    && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 ffmpeg \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -13,18 +18,11 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (including devDependencies if needed, or just production)
-# Note: Puppeteer is already in the base image, but we might need other deps
+# Install dependencies
 RUN npm install
 
 # Copy application files
 COPY . .
-
-# Create frames directory if it doesn't exist
-RUN mkdir -p frames && chown -R pptruser:pptruser frames
-
-# Switch back to pptruser for security (and to use the bundled chrome)
-USER pptruser
 
 # Environment variables
 ENV PORT=8080
