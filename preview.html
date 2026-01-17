@@ -25,53 +25,172 @@
         import * as THREE from 'https://esm.sh/three';
         import { TrackballControls } from 'https://esm.sh/three/examples/jsm/controls/TrackballControls.js?external=three';
 
-        const Globe = new ThreeGlobe()
-            .globeImageUrl('assets/earth-blue-marble.jpg')
-            .bumpImageUrl('assets/earth-topology.png');
+        // --- UTILS (Ported from render.js) ---
+        function getQuadraticBezierPoint(t, p0, p1, p2) {
+            const oneMinusT = 1 - t;
+            return new THREE.Vector3()
+                .addScaledVector(p0, oneMinusT * oneMinusT)
+                .addScaledVector(p1, 2 * oneMinusT * t)
+                .addScaledVector(p2, t * t);
+        }
 
-        // custom globe material
-        const globeMaterial = Globe.globeMaterial();
-        globeMaterial.bumpScale = 10;
-        new THREE.TextureLoader().load('assets/earth-water.png', texture => {
-            console.log(texture);
-            globeMaterial.specularMap = texture;
-            globeMaterial.specular = new THREE.Color('grey');
-            globeMaterial.shininess = 15;
-        });
+        function latLngToVector3(lat, lng, radius) {
+            const phi = (90 - lat) * Math.PI / 180;
+            const theta = (lng + 180) * Math.PI / 180;
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
-        directionalLight.position.set(1, 1, 1); // change light position to see the specularMap's effect
+            const x = -radius * Math.sin(phi) * Math.cos(theta);
+            const y = radius * Math.cos(phi);
+            const z = radius * Math.sin(phi) * Math.sin(theta);
 
-        // Setup renderer
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-        document.getElementById('globeViz').appendChild(renderer.domElement);
+            return new THREE.Vector3(-z, y, x);
+        }
 
-        // Setup scene
-        const scene = new THREE.Scene();
-        scene.add(Globe);
-        scene.add(new THREE.AmbientLight(0xcccccc, Math.PI));
-        scene.add(directionalLight);
+        // --- MAIN ---
+        (async () => {
+            // 1. Fetch Route
+            const routeResponse = await fetch('route.json');
+            const CITIES = await routeResponse.json();
 
-        // Setup camera
-        const camera = new THREE.PerspectiveCamera();
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        camera.position.z = 500;
+            // 2. Setup Globe
+            const Globe = new ThreeGlobe()
+                .globeImageUrl('assets/earth-blue-marble.jpg')
+                .bumpImageUrl('assets/earth-topology.png')
+                .labelsData(CITIES)
+                .labelLat(d => d.lat)
+                .labelLng(d => d.lng)
+                .labelText(d => d.name)
+                .labelSize(1.5)
+                .labelDotRadius(0.8)
+                .labelColor(() => 'rgba(255, 255, 255, 0.75)')
+                .labelResolution(2);
 
-        // Add camera controls
-        const tbControls = new TrackballControls(camera, renderer.domElement);
-        tbControls.minDistance = 101;
-        tbControls.rotateSpeed = 5;
-        tbControls.zoomSpeed = 0.8;
+            const globeMaterial = Globe.globeMaterial();
+            globeMaterial.bumpScale = 10;
+            new THREE.TextureLoader().load('assets/earth-water.png', texture => {
+                globeMaterial.specularMap = texture;
+                globeMaterial.specular = new THREE.Color('grey');
+                globeMaterial.shininess = 15;
+            });
 
-        // Kick-off renderer
-        (function animate() { // IIFE
-            // Frame cycle
-            tbControls.update();
-            renderer.render(scene, camera);
-            requestAnimationFrame(animate);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+            document.getElementById('globeViz').appendChild(renderer.domElement);
+
+            const scene = new THREE.Scene();
+            scene.add(Globe);
+            scene.add(new THREE.AmbientLight(0xcccccc, Math.PI));
+
+            const sun = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
+            sun.position.set(1, 1, 1);
+            scene.add(sun);
+
+            const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
+            camera.position.z = 400;
+            camera.position.y = 100;
+
+            const tbControls = new TrackballControls(camera, renderer.domElement);
+            tbControls.minDistance = 101;
+            tbControls.rotateSpeed = 5;
+            tbControls.zoomSpeed = 0.8;
+
+            // 3. Draw Flight Paths
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 });
+            const globeRadius = 100; // ThreeGlobe default
+
+            for (let i = 0; i < CITIES.length - 1; i++) {
+                const startCity = CITIES[i];
+                const endCity = CITIES[i + 1];
+
+                const startPos = latLngToVector3(startCity.lat, startCity.lng, globeRadius + 4);
+                const endPos = latLngToVector3(endCity.lat, endCity.lng, globeRadius + 4);
+                const midPoint = startPos.clone().add(endPos).multiplyScalar(0.5).normalize().multiplyScalar(globeRadius * 1.5);
+
+                const points = [];
+                for (let t = 0; t <= 1; t += 0.01) {
+                    points.push(getQuadraticBezierPoint(t, startPos, midPoint, endPos));
+                }
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.Line(geometry, lineMaterial);
+                scene.add(line);
+            }
+
+            // 4. Create Plane using SVG
+            const planeTexture = new THREE.TextureLoader().load('assets/plane.svg');
+            const planeGeometry = new THREE.PlaneGeometry(5, 5);
+            const planeMaterial = new THREE.MeshBasicMaterial({
+                map: planeTexture,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+
+            // Fix Rotation (Same math as render.js)
+            planeGeometry.rotateZ(-3 * Math.PI / 4);
+            planeGeometry.rotateX(-Math.PI / 2);
+
+            scene.add(plane);
+
+            // 5. Animation Loop
+            const LOOP_DURATION = 10000; // 10 seconds per segment?
+            // Actually, let's make it continuous flight across all segments
+
+            let startTime = Date.now();
+            let currentSegment = 0;
+
+            (function animate() {
+                // Update Time
+                // Simple continuous loop: each segment takes X seconds
+                const SEGMENT_DURATION = 5000; // 5 seconds per flight leg
+                const now = Date.now();
+                const elapsed = now - startTime;
+
+                // Calculate total progress
+                const totalSegments = CITIES.length - 1;
+                const totalDuration = totalSegments * SEGMENT_DURATION;
+                const totalProgress = (elapsed % totalDuration) / totalDuration; // 0 to 1 loop
+
+                const absoluteSegment = totalProgress * totalSegments;
+                const segmentIndex = Math.floor(absoluteSegment);
+                const t = absoluteSegment - segmentIndex; // 0 to 1 within segment
+
+                // Update Plane Position
+                if (segmentIndex < CITIES.length - 1) {
+                    const startCity = CITIES[segmentIndex];
+                    const endCity = CITIES[segmentIndex + 1];
+
+                    const startPos = latLngToVector3(startCity.lat, startCity.lng, globeRadius + 4);
+                    const endPos = latLngToVector3(endCity.lat, endCity.lng, globeRadius + 4);
+                    const midPoint = startPos.clone().add(endPos).multiplyScalar(0.5).normalize().multiplyScalar(globeRadius * 1.25);
+
+                    const pos = getQuadraticBezierPoint(t, startPos, midPoint, endPos);
+                    plane.position.copy(pos);
+
+                    // Look Ahead
+                    const nextT = Math.min(t + 0.01, 1.0);
+                    const nextPos = getQuadraticBezierPoint(nextT, startPos, midPoint, endPos);
+
+                    const upVec = pos.clone().normalize();
+                    plane.up.copy(upVec);
+                    plane.lookAt(nextPos);
+
+                    // Cinematic Camera Follow (Optional - can disorient user if they want to control it)
+                    // Let's keep it simple: manual controls usually preferred for web preview.
+                    // But if user wants "animation like video", maybe we should just follow?
+                    // Let's stick to manual controls for now as it's a "preview".
+                }
+
+                tbControls.update();
+                renderer.render(scene, camera);
+                requestAnimationFrame(animate);
+            })();
+
+            // Handle Resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
         })();
     </script>
 </body>
