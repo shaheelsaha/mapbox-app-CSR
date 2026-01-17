@@ -1,3 +1,11 @@
 {
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "three": "^0.182.0",
+    "three-globe": "^2.45.0"
+  }
 }
