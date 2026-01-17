@@ -7,8 +7,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
+const WIDTH = 1280;
+const HEIGHT = 720;
 
 /**
  * Renders a flight video for the given route.
@@ -201,7 +201,7 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
   const framesDir = path.join(__dirname, "frames", runId);
   if (!fs.existsSync(framesDir)) fs.mkdirSync(framesDir, { recursive: true });
 
-  const FRAMES_THIS_SEGMENT = 120; // 4 seconds per segment (30fps)
+  const FRAMES_THIS_SEGMENT = 60; // 2 seconds per segment (30fps) - fast mode
   let frameCount = 0;
 
   try {
@@ -235,6 +235,7 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
       .image2pipe(false) // needed? usually only for pipe inputs
       .videoCodec('libx264')
       .outputOptions('-pix_fmt yuv420p')
+      .outputOptions('-preset ultrafast')
       .on('end', () => {
         console.log('Video finished:', outputPath);
         // Cleanup frames
