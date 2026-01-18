@@ -34,7 +34,12 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
   const page = await browser.newPage();
   await page.setViewport({ width: WIDTH, height: HEIGHT });
 
-  page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+  page.on('console', msg => {
+    const text = msg.text();
+    // Filter out known performance warnings that are expected during frame capture
+    if (text.includes('GPU stall due to ReadPixels')) return;
+    console.log('PAGE LOG:', text);
+  });
   page.on('pageerror', err => console.log('PAGE ERROR:', err.toString()));
 
   // 2. Inject Content (Same HTML/Three.js logic)
