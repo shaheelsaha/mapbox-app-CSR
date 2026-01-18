@@ -5,6 +5,9 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { renderVideo } from './render.js';
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -12,7 +15,10 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(cors()); // Enable CORS for all origins
-app.use(express.static(__dirname));
+// app.use(express.static(__dirname)); // Removed default static for root to handle index.html manually
+// Serve strictly static assets (css, js, images) from public, but NOT index.html automatically
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+app.use(express.static(__dirname)); // For other assets in root if any
 app.use(express.json());
 
 // Public URL for assets (Cloud Run URL or localhost)
@@ -21,7 +27,18 @@ app.use(express.json());
 const getBaseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    // Read the HTML file
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    fs.readFile(indexPath, 'utf8', (err, data) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).send("Error loading page");
+        }
+        // Inject the token from environment
+        const token = process.env.MAPBOX_TOKEN || 'MISSING_TOKEN';
+        const result = data.replace('__MAPBOX_TOKEN__', token);
+        res.send(result);
+    });
 });
 
 app.post('/render', async (req, res) => {

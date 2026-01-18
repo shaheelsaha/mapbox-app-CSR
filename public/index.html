@@ -423,8 +423,8 @@
     </div>
 
     <script>
-        // Mapbox Token
-        const MAPBOX_TOKEN = 'pk.eyJ1Ijoic2hhaGVlbDU1IiwiYSI6ImNta2Q0cTNqZTA2cGszZ3M2dzVucDdsOGwifQ.WGhIdum-usVYkJJZOfr9UA';
+        // Initialize Mapbox with token from server injection
+        const MAPBOX_TOKEN = '__MAPBOX_TOKEN__';
         mapboxgl.accessToken = MAPBOX_TOKEN;
 
         // Use the Cloud Run URL extracted from your earlier screenshots
