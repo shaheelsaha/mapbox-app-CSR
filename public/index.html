@@ -423,12 +423,17 @@
     </div>
 
     <script>
-        // Initialize Mapbox with token from server injection
-        const MAPBOX_TOKEN = '__MAPBOX_TOKEN__';
+        // Initialize Mapbox with token
+        // SECURITY NOTE: For static hosting, restrict this token to your domain in the Mapbox Dashboard
+        const MAPBOX_TOKEN = 'pk.eyJ1Ijoic2hhaGVlbDU1IiwiYSI6ImNta2Q0cTNqZTA2cGszZ3M2dzVucDdsOGwifQ.WGhIdum-usVYkJJZOfr9UA';
         mapboxgl.accessToken = MAPBOX_TOKEN;
 
-        // Use the Cloud Run URL extracted from your earlier screenshots
-        const API_URL = "https://map-animator-280013773890.europe-west1.run.app/render";
+        // Determine API URL based on environment
+        // If on localhost, use local backend. If on Firebase (or other), use Cloud Run.
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const API_URL = isLocal
+            ? "http://localhost:8080/render"
+            : "https://map-animator-280013773890.europe-west1.run.app/render";
 
         const DEFAULT_STOPS = [
             {}, {}

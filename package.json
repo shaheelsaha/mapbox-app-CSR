@@ -11,5 +11,8 @@
     "puppeteer": "^24.35.0",
     "three": "^0.182.0",
     "three-globe": "^2.45.0"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.3.1"
   }
 }

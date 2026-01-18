@@ -73,6 +73,11 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
 
     const scene = new THREE.Scene();
     
+    // Background Stars
+    new THREE.TextureLoader().load('https://cdn.jsdelivr.net/npm/three-globe/example/img/night-sky.png', texture => {
+      scene.background = texture;
+    });
+    
     // Camera
     const camera = new THREE.PerspectiveCamera(45, WIDTH/HEIGHT, 1, 10000);
     camera.position.z = 400; 
@@ -101,6 +106,35 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
     });
 
     scene.add(Globe);
+
+    // --- ATMOSPHERE ---
+    const vertexShader = \`
+      varying vec3 vNormal;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    \`;
+    const fragmentShader = \`
+      varying vec3 vNormal;
+      void main() {
+        float intensity = pow(0.6 - dot(vNormal, vec3(0, 0, 1.0)), 2.0);
+        gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity; 
+      }
+    \`;
+    
+    // Atmosphere geometry should be slightly larger than the globe (Radius 100)
+    const atmoGeometry = new THREE.SphereGeometry(100 + 15, 64, 64);
+    const atmoMaterial = new THREE.ShaderMaterial({
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true
+    });
+    const atmosphere = new THREE.Mesh(atmoGeometry, atmoMaterial);
+    scene.add(atmosphere);
+
     scene.add(new THREE.AmbientLight(0xcccccc, Math.PI));
     const sun = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
     sun.position.set(1, 1, 1);
