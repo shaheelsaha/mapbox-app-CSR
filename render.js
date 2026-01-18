@@ -237,7 +237,7 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
       .input(path.join(framesDir, 'frame_%05d.png'))
       .inputFPS(30)
       .output(outputPath)
-      .image2pipe(false) // needed? usually only for pipe inputs
+
       .videoCodec('libx264')
       .outputOptions('-pix_fmt yuv420p')
       .outputOptions('-preset ultrafast')
