@@ -73,9 +73,27 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
 
     const scene = new THREE.Scene();
     
+    // Asset Loading State
+    let globeReady = false;
+    let bgReady = false;
+    
+    function checkReady() {
+        if (globeReady && bgReady) {
+            window.ASSETS_READY = true;
+            console.log("ALL ASSETS READY");
+        }
+    }
+
     // Background Stars
     new THREE.TextureLoader().load('https://cdn.jsdelivr.net/npm/three-globe/example/img/night-sky.png', texture => {
       scene.background = texture;
+      bgReady = true;
+      checkReady();
+    }, undefined, (err) => {
+        console.error("Error loading star texture:", err);
+        // Fallback to ready anyway so we don't hang, but log error
+        bgReady = true; 
+        checkReady();
     });
     
     // Camera
@@ -94,7 +112,11 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
       .labelSize(1.5)
       .labelDotRadius(0.8)
       .labelColor(() => 'rgba(255, 255, 255, 0.75)')
-      .labelResolution(2);
+      .labelResolution(2)
+      .onGlobeReady(() => {
+          globeReady = true;
+          checkReady();
+      });
 
     const globeMaterial = Globe.globeMaterial();
     globeMaterial.bumpScale = 10;
