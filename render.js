@@ -193,21 +193,34 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
 
         renderer.render(scene, camera);
     }
+    
+    // Check when textures are ready
+    window.ASSETS_READY = false;
+    THREE.DefaultLoadingManager.onLoad = function ( ) {
+        console.log("Values loaded");
+        window.ASSETS_READY = true;
+    };
   </script>
 </body>
 </html>
   `);
 
-  // 3. Wait for assets
-  await new Promise(r => setTimeout(r, 5000)); // Safer wait for network assets
+  // 3. Smart Wait for assets
+  try {
+    await page.waitForFunction('window.ASSETS_READY === true', { timeout: 10000 });
+    console.log("Assets loaded!");
+  } catch (e) {
+    console.log("Wait for assets timed out, proceeding anyway...");
+  }
 
-  // 4. Create Frames Directory (Unique per request ideally, but using shared for simplicity now)
+  // 4. Create Frames Directory
   const runId = Date.now().toString();
   const framesDir = path.join(__dirname, "frames", runId);
   if (!fs.existsSync(framesDir)) fs.mkdirSync(framesDir, { recursive: true });
 
-  const FRAMES_THIS_SEGMENT = 60; // 2 seconds per segment (30fps) - fast mode
+  const FRAMES_THIS_SEGMENT = 60; // 2 seconds per segment
   let frameCount = 0;
+  const writePromises = [];
 
   try {
     for (let i = 0; i < routeData.length - 1; i++) {
@@ -218,10 +231,25 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
         }, i, t);
 
         const padded = String(frameCount).padStart(5, '0');
-        await page.screenshot({ path: path.join(framesDir, `frame_${padded}.png`) });
+        const framePath = path.join(framesDir, `frame_${padded}.jpg`);
+
+        // Capture buffer instead of writing directly
+        const buffer = await page.screenshot({ type: 'jpeg', quality: 90 });
+
+        // Write file asynchronously without blocking loop
+        writePromises.push(fs.promises.writeFile(framePath, buffer));
+
+        // Optional: throttle promises if too many pending (e.g. > 100) to avoid RAM spike
+        if (writePromises.length > 50) {
+          await Promise.all(writePromises.splice(0, 50));
+        }
+
         frameCount++;
       }
     }
+    // Wait for remaining writes
+    await Promise.all(writePromises);
+
   } catch (err) {
     console.error("Error generating frames:", err);
     await browser.close();
@@ -234,13 +262,14 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
   console.log("Stitching video...");
   return new Promise((resolve, reject) => {
     ffmpeg()
-      .input(path.join(framesDir, 'frame_%05d.png'))
+      .input(path.join(framesDir, 'frame_%05d.jpg')) // Changed to .jpg
       .inputFPS(30)
       .output(outputPath)
 
       .videoCodec('libx264')
       .outputOptions('-pix_fmt yuv420p')
       .outputOptions('-preset ultrafast')
+      .outputOptions('-threads 0') // Use all cores
       .on('end', () => {
         console.log('Video finished:', outputPath);
         // Cleanup frames

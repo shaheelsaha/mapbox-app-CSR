@@ -21,7 +21,7 @@ app.use(express.json());
 const getBaseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'preview.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.post('/render', async (req, res) => {
