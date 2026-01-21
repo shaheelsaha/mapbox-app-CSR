@@ -1,6 +1,7 @@
 import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import ffmpeg from "fluent-ffmpeg";
 import { fileURLToPath } from 'url';
 
@@ -16,8 +17,10 @@ const HEIGHT = 720;
  * @param {string} outputPath - Path to save the MP4 file.
  * @param {string} baseUrl - URL where assets (earth.jpg, plane.svg) are hosted (local server).
  */
-export async function renderVideo(routeData, outputPath, baseUrl) {
-  console.log("Starting render for route:", routeData.map(c => c.name).join(" -> "));
+export async function renderVideo(routeData, outputPath, baseUrl, vehicleType = 'plane') {
+  console.log(`Starting render for route: ${routeData.map(c => c.name).join(" -> ")} [${vehicleType}]`);
+
+  // ... (browser launch remains same) ...
 
   // 1. Launch Browser
   const browser = await puppeteer.launch({
@@ -42,7 +45,7 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
   });
   page.on('pageerror', err => console.log('PAGE ERROR:', err.toString()));
 
-  // 2. Inject Content (Same HTML/Three.js logic)
+  // 2. Inject Content
   // We embed the JSON route directly
   await page.setContent(`
 <!DOCTYPE html>
@@ -79,9 +82,42 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
     
     function checkReady() {
         if (globeReady && bgReady) {
+            // Fix: Initial Camera Setup to avoid jump
+            initialCameraSetup();
+             
             window.ASSETS_READY = true;
             console.log("ALL ASSETS READY");
         }
+    }
+
+    // --- CAMERA CONSTANTS ---
+    const START_FOCUS_END = 0.23;   // ~0.8s
+    const ARRIVAL_START = 0.80;    // ~0.7s arrival
+    const CAM_NEAR = 105; // closer city focus
+    const CAM_FAR = 190;  // pulled-back travel view
+
+    function initialCameraSetup() {
+        if (!CITIES || CITIES.length === 0) return;
+        
+        // Match the logic for t=0 in renderFrame
+        // At t=0, camDist = CAM_FAR (since t < START_FOCUS, localT=0, lerp(CAM_FAR, CAM_NEAR, 0) -> CAM_FAR)
+        const startCity = CITIES[0];
+        const globeRadius = 100; // Base radius
+        
+        const camDist = CAM_FAR;
+        
+        const camPos = latLngToVector3(
+          startCity.lat, 
+          startCity.lng, 
+          globeRadius + camDist
+        );
+        
+        camera.position.copy(camPos);
+        camera.lookAt(latLngToVector3(startCity.lat, startCity.lng, globeRadius + 4)); // Look at start city "ground"
+        
+        // Force render
+        renderer.render(scene, camera);
+        console.log("Initial camera set to Start City");
     }
 
     // Background Stars
@@ -110,13 +146,21 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
       .labelLng(d => d.lng)
       .labelText(d => d.name)
       .labelSize(1.5)
-      .labelDotRadius(0.8)
+      .labelDotRadius(0) // Removed white dot
       .labelColor(() => 'rgba(255, 255, 255, 0.75)')
       .labelResolution(2)
       .onGlobeReady(() => {
           globeReady = true;
           checkReady();
-      });
+      })
+      .arcsData([]) // Initial empty
+      .arcColor(d => d.color || 'orange')
+      .arcAltitude(d => d.altitude || 0.25)
+      .arcStroke(d => d.stroke || 1.2)
+      .arcDashLength(0.001)      // tiny visible segment
+      .arcDashGap(1)             // hide rest
+      .arcDashInitialGap(d => d.gap) // dynamic control
+      .arcDashAnimateTime(0);    // manual animate
 
     const globeMaterial = Globe.globeMaterial();
     globeMaterial.bumpScale = 10;
@@ -163,6 +207,18 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
     scene.add(sun);
 
     // --- UTILS ---
+    function smoothstep(t) {
+      return t * t * (3 - 2 * t);
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
+    function lerpVector(a, b, t) {
+      return a.clone().lerp(b, t);
+    }
+
     function getQuadraticBezierPoint(t, p0, p1, p2) {
       const oneMinusT = 1 - t;
       return new THREE.Vector3()
@@ -171,84 +227,290 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
         .addScaledVector(p2, t * t);
     }
 
-    function latLngToVector3(lat, lng, radius) {
-      const phi = (90 - lat) * Math.PI / 180;
-      const theta = (lng + 180) * Math.PI / 180;
-      
-      const x = -radius * Math.sin(phi) * Math.cos(theta);
-      const y = radius * Math.cos(phi);
-      const z = radius * Math.sin(phi) * Math.sin(theta);
+    function getCameraOnSphere(startDir, endDir, t, radius) {
+      // Linear interpolation of directions + normalize
+      const dir = startDir.clone().lerp(endDir, t).normalize();
+      return dir.multiplyScalar(radius);
+    }
 
-      return new THREE.Vector3(-z, y, x);
+    function getGreatCirclePoint(t, startPos, endPos, peakAltitude) {
+        // Linear interpolation of vectors + Normalize = Slerp approximation on sphere
+        const base = startPos.clone().lerp(endPos, t).normalize();
+        
+        // Arc altitude: sin wave peaking at t=0.5
+        // Basic altitude is 4 units (start/end) + peak
+        // We assume startPos/endPos have radius ~104
+        const radius = 100;
+        const currentAlt = 0 + peakAltitude * Math.sin(t * Math.PI);
+        
+        return base.multiplyScalar(radius + 4 + currentAlt);
+    }
+
+    function getCameraTarget(startPos, endPos, t, globeRadius) {
+      // Lock camera focus slightly AHEAD of the vehicle
+      const lookT = Math.min(t + 0.015, 1);
+      return getGreatCirclePoint(
+        lookT,
+        startPos,
+        endPos,
+        0 // NO altitude for target → stable
+      );
+    }
+
+    function latLngToVector3(lat, lng, radius) {
+      // Use ThreeGlobe's internal conversion to ensure alignment with the map
+      // getCoords(lat, lng, altitude). Altitude is relative to radius (0 = surface).
+      // We pass radius e.g. 104. Globe radius is 100.
+      const altitude = (radius / 100) - 1;
+      const coords = Globe.getCoords(lat, lng, altitude);
+      return new THREE.Vector3(coords.x, coords.y, coords.z);
     }
 
     // --- CUSTOM PATH LINES ---
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 });
     const globeRadius = 100;
+    
+    // Global State for Arcs
+    const ARC_DATA = [];
 
     for (let i = 0; i < CITIES.length - 1; i++) {
         const startCity = CITIES[i];
         const endCity = CITIES[i+1];
         
-        const startPos = latLngToVector3(startCity.lat, startCity.lng, globeRadius + 4);
-        const endPos = latLngToVector3(endCity.lat, endCity.lng, globeRadius + 4);
-        const midPoint = startPos.clone().add(endPos).multiplyScalar(0.5).normalize().multiplyScalar(globeRadius * 1.5);
-        
-        const points = [];
-        for(let t=0; t<=1; t+=0.01) {
-             points.push(getQuadraticBezierPoint(t, startPos, midPoint, endPos));
+        const segmentVehicle = endCity.vehicle || 'plane';
+        const isTrain = segmentVehicle === 'train';
+        const isCar = segmentVehicle === 'car';
+
+        if (isCar && endCity.pathGeometry) {
+             // --- CAR PATH (Complex - Keep as Lines) ---
+             // Lift slightly higher than car mesh (1.02 vs 1.01) to avoid Z-fighting and ensure visibility
+             const pathPoints = endCity.pathGeometry;
+             const roadAltitude = globeRadius * 1.02; 
+             let points = [];
+             pathPoints.forEach(p => {
+                 const v = latLngToVector3(p[1], p[0], roadAltitude);
+                 points.push(v);
+             });
+             const geometry = new THREE.BufferGeometry().setFromPoints(points);
+             const line = new THREE.Line(geometry, lineMaterial);
+             scene.add(line);
+             
+        } else {
+             // --- PLANE / TRAIN (Arcs) ---
+             // We use ThreeGlobe arcs for progressive animation
+             ARC_DATA.push({
+                 startLat: startCity.lat,
+                 startLng: startCity.lng,
+                 endLat: endCity.lat,
+                 endLng: endCity.lng,
+                 color: 'orange',
+                 // Planes high (0.35 ~ 35km?), Trains low (0.01)
+                 // Note: arcAltitude is relative to globe radius (1 = 1 radius high). 
+                 // Our previous code used 35 units on 100 rad -> 0.35.
+                 altitude: isTrain ? 0.01 : 0.35, 
+                 stroke: 1.5,
+                 gap: 1 // Start fully hidden
+             });
         }
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(geometry, lineMaterial);
-        scene.add(line);
     }
     
-    // --- PLANE MARKER ---
-    const planeTexture = new THREE.TextureLoader().load('${baseUrl}/assets/plane.svg');
-    const planeGeometry = new THREE.PlaneGeometry(5, 5);
-    const planeMaterial = new THREE.MeshBasicMaterial({ 
-        map: planeTexture, 
-        transparent: true, 
-        side: THREE.DoubleSide 
-    });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+    // Initial Load
+    Globe.arcsData(ARC_DATA);
     
-    planeGeometry.rotateZ(-3 * Math.PI / 4);
-    planeGeometry.rotateX(-Math.PI / 2);
+    // --- VEHICLE MARKERS ---
+    const planeTex = new THREE.TextureLoader().load('${baseUrl}/assets/plane.svg');
+    const trainTex = new THREE.TextureLoader().load('${baseUrl}/assets/train.svg');
+    const carTex = new THREE.TextureLoader().load('${baseUrl}/assets/car.svg');
+
+    const planeMat = new THREE.MeshBasicMaterial({ map: planeTex, transparent: true, side: THREE.DoubleSide });
+    const trainMat = new THREE.MeshBasicMaterial({ map: trainTex, transparent: true, side: THREE.DoubleSide });
+    const carMat = new THREE.MeshBasicMaterial({ map: carTex, transparent: true, side: THREE.DoubleSide });
+
+    const planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), planeMat);
+    planeMesh.geometry.rotateX(-Math.PI / 2);
+    planeMesh.geometry.rotateY(-Math.PI / 2); // Align Right-facing SVG to Forward (+Z)
     
-    scene.add(plane);
+    const trainMesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), trainMat);
+    trainMesh.geometry.rotateX(-Math.PI / 2);
+    trainMesh.geometry.rotateZ(Math.PI); // Train rotation
+
+    const carMesh = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), carMat);
+    carMesh.geometry.rotateX(-Math.PI / 2);
+    // Car might need rotation
+    carMesh.geometry.rotateZ(Math.PI); 
+
+    // Group them
+    const vehicleGroup = new THREE.Group();
+    vehicleGroup.add(planeMesh);
+    vehicleGroup.add(trainMesh);
+    vehicleGroup.add(carMesh);
+    scene.add(vehicleGroup);
+
+
 
     // --- RENDER FUNCTION ---
-    window.renderFrame = async function(segmentIndex, t) {
+    let lastSegmentIndex = -1;
+
+    window.renderFrame = async function(segmentIndex, localT, globalT) {
+        // --- TIME MAPPING ---
+        // Plane/Arc logic stays local (per segment)
+        let travelT = localT;
+
+        // Clamp travelT (safety)
+        travelT = Math.min(Math.max(travelT, 0), 1);
+        
+        // --- SYNCED EASING ---
+        // Apply smoothstep to travelT so Plane, Camera, and Arc all move in sync
+        let easedTravelT = smoothstep(travelT);
+
         const startCity = CITIES[segmentIndex];
         const endCity = CITIES[segmentIndex + 1];
-
+        
+        const segmentVehicle = endCity.vehicle || 'plane';
+        const isTrain = segmentVehicle === 'train';
+        const isCar = segmentVehicle === 'car';
+        
+        // Toggle Meshes
+        planeMesh.visible = !isTrain && !isCar;
+        trainMesh.visible = isTrain;
+        carMesh.visible = isCar;
+        
         const globeRadius = Globe.getGlobeRadius() || 100; 
         const startPos = latLngToVector3(startCity.lat, startCity.lng, globeRadius + 4);
         const endPos = latLngToVector3(endCity.lat, endCity.lng, globeRadius + 4);
-        const midPoint = startPos.clone().add(endPos).multiplyScalar(0.5).normalize().multiplyScalar(globeRadius * 1.25);
         
-        const pos = getQuadraticBezierPoint(t, startPos, midPoint, endPos);
-        plane.position.copy(pos);
+        // Path Altitude
+        let altitudeScale = 1.35; // Plane default
+        if (isTrain) altitudeScale = 1.05;
+        if (isCar) altitudeScale = 1.01; // Closer to ground
         
-        const nextT = Math.min(t + 0.01, 1.0);
-        const nextPos = getQuadraticBezierPoint(nextT, startPos, midPoint, endPos);
-        
-        const upVec = pos.clone().normalize();
-        plane.up.copy(upVec);
-        plane.lookAt(nextPos);
+        // Midpoint for Camera (High arc) and backup for path
+        const midPoint = startPos.clone().add(endPos).multiplyScalar(0.5).normalize().multiplyScalar(globeRadius * altitudeScale);
 
-        const baseAlt = 20;   
-        const peakAlt = 90;   
-        const sinVal = Math.sin(t * Math.PI);
-        const altitude = baseAlt + (peakAlt * sinVal);
+        let pos, nextPos;
 
-        const cameraPos = pos.clone().normalize().multiplyScalar(globeRadius + altitude);
-        camera.position.copy(cameraPos);
-        camera.lookAt(pos);
+        if (isCar && endCity.pathGeometry) {
+             // --- COMPLEX ROAD PATH ---
+             const pathPoints = endCity.pathGeometry;
+             // Use travelT instead of t
+             const idx = Math.floor(travelT * (pathPoints.length - 1));
+             const nextIdx = Math.min(idx + 1, pathPoints.length - 1);
+             
+             const p1 = pathPoints[idx];
+             const p2 = pathPoints[nextIdx];
+             
+             // Interpolate
+             const localT = (travelT * (pathPoints.length - 1)) - idx;
+             
+             const lng = p1[0] + (p2[0] - p1[0]) * localT;
+             const lat = p1[1] + (p2[1] - p1[1]) * localT;
+             
+             pos = latLngToVector3(lat, lng, globeRadius * altitudeScale);
+             
+             // LookAt
+             const lookLng = p2[0];
+             const lookLat = p2[1];
+             nextPos = latLngToVector3(lookLat, lookLng, globeRadius * altitudeScale);
+             
+             if (pos.distanceTo(nextPos) < 0.001 && idx > 0) {
+                 const prev = pathPoints[idx-1];
+                 nextPos = pos.clone().add(pos.clone().sub(latLngToVector3(prev[1], prev[0], globeRadius * altitudeScale)));
+             }
+
+        } else if (isTrain) {
+             // --- TRAIN ---
+             pos = getGreatCirclePoint(easedTravelT, startPos, endPos, 1);
+             const nextT = Math.min(easedTravelT + 0.01, 1.0);
+             nextPos = getGreatCirclePoint(nextT, startPos, endPos, 1);
+             
+        } else {
+            // --- PLANE ---
+            pos = getGreatCirclePoint(easedTravelT, startPos, endPos, 35);
+            const nextT = easedTravelT + 0.01;
+            nextPos = getGreatCirclePoint(nextT, startPos, endPos, 35);
+        }
+
+        vehicleGroup.position.copy(pos);
+        
+        // Stabilize orientation
+        vehicleGroup.up.copy(pos).clone().normalize();
+        vehicleGroup.lookAt(nextPos);
+        
+        // ---------------- CAMERA LOGIC ----------------
+
+        // ---------------- CAMERA LOGIC ----------------
+
+        // Camera phases over ENTIRE route (Global T)
+        const CAM_GLOBE = 260; // Full globe (start & end ONLY)
+        const CAM_MID   = 135; // Partial zoom-out (between cities)
+        const CAM_NEAR  = 55;  // City focus
+
+        const INTRO_END = 0.10;
+        const OUTRO_START = 0.90;
+
+        // --- CAMERA DISTANCE ---
+        // 1. Calculate the "Flight" distance based on segment logic (Takeoff/Cruise/Landing)
+        let flightDist;
+        
+        if (localT < 0.25) {
+            // Takeoff: city → partial zoom-out
+            const t = smoothstep(localT / 0.25);
+            flightDist = lerp(CAM_NEAR, CAM_MID, t);
+
+        } else if (localT > 0.75) {
+            // Arrival: partial zoom-out → city
+            const t = smoothstep((localT - 0.75) / 0.25);
+            flightDist = lerp(CAM_MID, CAM_NEAR, t);
+
+        } else {
+            // Cruise: stay in partial zoom-out
+            flightDist = CAM_MID;
+        }
+
+        // 2. Apply Global Intro/Outro Blending
+        // This ensures NO SNAP, because we blend from Globe to whatever the current flightDist is.
+        let camDist = flightDist;
+
+        // INTRO – full globe → current flight view
+        if (globalT < INTRO_END) {
+          const t = smoothstep(globalT / INTRO_END);
+          camDist = lerp(CAM_GLOBE, flightDist, t);
+
+        // OUTRO – current flight view → full globe
+        } else if (globalT > OUTRO_START) {
+          const t = smoothstep((globalT - OUTRO_START) / (1 - OUTRO_START));
+          camDist = lerp(flightDist, CAM_GLOBE, t);
+        }
+
+        // --- CAMERA POSITION ---
+        // New Unified Rig: Camera follows SAME curve as vehicle
+        const camPos = getGreatCirclePoint(
+          smoothstep(localT),
+          startPos,
+          endPos,
+          0 // camera rides sphere, altitude handled by camDist
+        );
+
+        camera.position.copy(
+          camPos.normalize().multiplyScalar(globeRadius + camDist)
+        );
+
+        // --- CAMERA FOCUS ---
+        // Always look at ONE stable target
+        const camTarget = getCameraTarget(
+          startPos,
+          endPos,
+          smoothstep(localT),
+          globeRadius
+        );
+
+        camera.lookAt(camTarget);
 
         renderer.render(scene, camera);
-    }
+        
+        // Log progress occasionally
+        if (segmentIndex === 0 && localT === 0) console.log("Initial camera set to Start City");
+    };
     
     // Check when textures are ready
     window.ASSETS_READY = false;
@@ -259,8 +521,7 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
   </script>
 </body>
 </html>
-  `);
-
+`);
   // 3. Smart Wait for assets
   try {
     await page.waitForFunction('window.ASSETS_READY === true', { timeout: 10000 });
@@ -271,40 +532,51 @@ export async function renderVideo(routeData, outputPath, baseUrl) {
 
   // 4. Create Frames Directory
   const runId = Date.now().toString();
-  const framesDir = path.join(__dirname, "frames", runId);
+  const framesDir = path.join(os.tmpdir(), "frames", runId);
   if (!fs.existsSync(framesDir)) fs.mkdirSync(framesDir, { recursive: true });
 
-  const FRAMES_THIS_SEGMENT = 60; // 2 seconds per segment
+  // 3. Render Loop
+  console.log("Starting render loop...");
+
+  // Calculate total frames
+  const SEGMENTS = routeData.length - 1;
+  const FRAMES_PER_SEGMENT = 105;
+  const TOTAL_FRAMES = FRAMES_PER_SEGMENT * SEGMENTS;
+
   let frameCount = 0;
-  const writePromises = [];
+
 
   try {
-    for (let i = 0; i < routeData.length - 1; i++) {
-      for (let f = 0; f < FRAMES_THIS_SEGMENT; f++) {
-        const t = f / (FRAMES_THIS_SEGMENT - 1);
-        await page.evaluate((segIdx, time) => {
-          return window.renderFrame && window.renderFrame(segIdx, time);
-        }, i, t);
+    for (let globalFrame = 0; globalFrame < TOTAL_FRAMES; globalFrame++) {
+      // Calculate indices and time
+      const segmentIndex = Math.floor(globalFrame / FRAMES_PER_SEGMENT);
+      const localFrame = globalFrame % FRAMES_PER_SEGMENT;
 
-        const padded = String(frameCount).padStart(5, '0');
-        const framePath = path.join(framesDir, `frame_${padded}.jpg`);
+      const localT = localFrame / (FRAMES_PER_SEGMENT - 1);
+      const globalT = globalFrame / (TOTAL_FRAMES - 1);
 
-        // Capture buffer instead of writing directly
-        const buffer = await page.screenshot({ type: 'jpeg', quality: 90 });
+      await page.evaluate(
+        (segIdx, tLocal, tGlobal) => {
+          window.renderFrame(segIdx, tLocal, tGlobal);
+        },
+        segmentIndex,
+        localT,
+        globalT
+      );
 
-        // Write file asynchronously without blocking loop
-        writePromises.push(fs.promises.writeFile(framePath, buffer));
+      // Screenshot
+      const buffer = await page.screenshot({ type: "jpeg", quality: 90 });
 
-        // Optional: throttle promises if too many pending (e.g. > 100) to avoid RAM spike
-        if (writePromises.length > 50) {
-          await Promise.all(writePromises.splice(0, 50));
-        }
+      // Write to file (matching original logic for stitching later)
+      const padded = String(globalFrame).padStart(5, '0');
+      const framePath = path.join(framesDir, `frame_${padded}.jpg`);
+      await fs.promises.writeFile(framePath, buffer);
 
-        frameCount++;
+      // Log progress every 30 frames
+      if (globalFrame % 30 === 0) {
+        console.log(`Rendered frame ${globalFrame}/${TOTAL_FRAMES} (Seg ${segmentIndex})`);
       }
     }
-    // Wait for remaining writes
-    await Promise.all(writePromises);
 
   } catch (err) {
     console.error("Error generating frames:", err);

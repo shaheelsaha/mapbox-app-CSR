@@ -4,6 +4,7 @@ import fs from 'fs';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { renderVideo } from './render.js';
+import os from 'os';
 
 import dotenv from 'dotenv';
 dotenv.config();
@@ -43,22 +44,30 @@ app.get('/', (req, res) => {
 
 app.post('/render', async (req, res) => {
     try {
-        const routeData = req.body;
-        if (!routeData || !Array.isArray(routeData)) {
-            return res.status(400).send("Invalid route data. Expected an array of cities.");
+        let routeData = req.body;
+        let vehicleType = 'plane';
+
+        // Support both Array (legacy) and Object { stops: [], vehicle: '...' } payloads
+        if (!Array.isArray(routeData) && routeData.stops) {
+            vehicleType = routeData.vehicle || 'plane';
+            routeData = routeData.stops;
         }
 
-        console.log("Received render request for cities:", routeData.length);
+        if (!routeData || !Array.isArray(routeData)) {
+            return res.status(400).send("Invalid route data. Expected an array of cities or object with stops.");
+        }
+
+        console.log(`Received render request for ${routeData.length} cities. Vehicle: ${vehicleType}`);
 
         const timestamp = Date.now();
-        const outputPath = path.join(__dirname, `output_${timestamp}.mp4`);
+        const outputPath = path.join(os.tmpdir(), `output_${timestamp}.mp4`);
         const baseUrl = getBaseUrl(req); // e.g., http://localhost:8080
 
         // Increase timeout for this request if possible (Cloud Run limits apply)
         // Note: Client connection might timeout so client needs to handle long-polling or waits.
         // For now, we wait and stream at the end.
 
-        const videoPath = await renderVideo(routeData, outputPath, baseUrl);
+        const videoPath = await renderVideo(routeData, outputPath, baseUrl, vehicleType);
 
         console.log("Video generated at:", videoPath);
 

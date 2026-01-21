@@ -400,11 +400,11 @@
         <div class="card">
             <h1>Create Flight Video</h1>
 
-            <div id="stops" class="stops-list">
+            <div id="stops">
                 <!-- Stops added via JS -->
             </div>
 
-            <button onclick="addStop()" class="btn-add">+ Add Stop</button>
+            <button disabled>Add Stop (Max 2)</button>
             <button onclick="generateVideo()" id="generateBtn" class="btn-primary">Generate Video</button>
         </div>
 
@@ -442,11 +442,40 @@
         function createStopRow(index, data = {}) {
             const div = document.createElement('div');
             div.className = 'stop-row';
-            const geocoderId = `geocoder-${index}`; // Unique ID for each geocoder
+
+            // Unique ID for radio group
+            const groupName = `vehicle_${Date.now()}_${index}`;
+            const vehicle = data.vehicle || 'plane';
+            const isFirst = index === 0;
+
+            let vehicleHtml = '';
+            if (!isFirst) {
+                vehicleHtml = `
+                    <div style="margin-top: 10px; display: flex; gap: 15px; align-items: center; font-size: 0.9em;">
+                        <strong>Travel Mode:</strong>
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="${groupName}" value="plane" ${vehicle === 'plane' ? 'checked' : ''}> 
+                            ✈️ Flight
+                        </label>
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="${groupName}" value="train" ${vehicle === 'train' ? 'checked' : ''}> 
+                            🚆 Train
+                        </label>
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="${groupName}" value="car" ${vehicle === 'car' ? 'checked' : ''}> 
+                            🚗 Car
+                        </label>
+                    </div>
+                `;
+            }
+
             div.innerHTML = `
-                <div id="${geocoderId}" class="geocoder-container" style="width: 100%;"></div>
-                <input type="number" step="any" placeholder="Lat" value="${data.lat || ''}" class="input-lat" readonly>
-                <input type="number" step="any" placeholder="Lng" value="${data.lng || ''}" class="input-lng" readonly>
+                <div class="input-group">
+                    <div class="geocoder-container"></div>
+                    <input type="hidden" class="input-lat" value="${data.lat || ''}" readonly>
+                    <input type="hidden" class="input-lng" value="${data.lng || ''}" readonly>
+                </div>
+                ${vehicleHtml}
                 <button class="btn-icon" onclick="removeStop(this)" title="Remove">✕</button>
                 <input type="hidden" class="input-name" value="${data.name || ''}"> 
             `;
@@ -479,12 +508,9 @@
                     console.log("Geocoder cleared.");
                 });
 
-                geocoderContainer.appendChild(geocoder.onAdd(new mapboxgl.Map({
-                    container: document.createElement('div'), // Dummy container
-                    style: 'mapbox://styles/mapbox/streets-v11',
-                    center: [0, 0],
-                    zoom: 0
-                })));
+                // Add the control
+                geocoderContainer.appendChild(geocoder.onAdd());
+
                 // Set initial value for geocoder if data.name exists
                 if (data.name) {
                     geocoder.setInput(data.name);
@@ -493,6 +519,22 @@
 
             return { element: div, init: initGeocoder };
         }
+
+        // --- PREVIEW VISUALIZATION (Three.js) ---
+        // Setup a basic Three.js scene for the preview
+        (function initPreview() {
+            // Note: This is an optional enhancement to show the 3D globe in the background or a small preview
+            // For now, we are primarily using Mapbox for inputs and Cloud Run for the main render.
+            // But let's verify if there is a preview div? 
+            // The current UI sends data to the backend. User sees the result in <video>.
+            // However, to fix "I don't see stars", we should probably add a 3D preview if possible, 
+            // OR explicitly tell the user to look at the VIDEO.
+
+            // Re-reading user intent: "did u add this too star in backgrand". 
+            // If they are strictly looking at the video output, then my previous assumption was wrong.
+            // But usually users check the "Preview" if one exists. 
+            // Currently index.html DOES NOT have a live 3D preview, only a Video Player element.
+        })();
 
         function addStop(data) {
             console.log("Adding stop:", data);
@@ -508,77 +550,87 @@
             }
         }
 
-        function removeStop(btn) {
-            const list = document.getElementById('stops');
-            if (list.children.length > 2) {
-                btn.parentElement.remove();
-            } else {
-                alert("You need at least 2 stops!");
-            }
-        }
-
-        // Initialize with default data directly
-        console.log("Initializing default stops...");
-        DEFAULT_STOPS.forEach(stop => addStop(stop));
-
         async function generateVideo() {
-            const btn = document.getElementById('generateBtn');
-            const videoWrapper = document.getElementById('videoWrapper');
-            const loader = document.getElementById('loader');
-            const placeholder = document.getElementById('placeholder');
-            const videoPlayer = document.getElementById('videoPlayer');
+            const button = document.getElementById('generateBtn');
             const status = document.getElementById('status');
+            const videoPlayer = document.getElementById('videoPlayer');
+            const loader = document.getElementById('loader'); // Keep loader for UI
+            const placeholder = document.getElementById('placeholder'); // Keep placeholder for UI
 
-            // Collect Data
+            button.disabled = true;
+            button.innerText = "Generating..."; // Keep original button text change
+            status.textContent = "Generating video... (This may take 1-2 minutes)";
+            status.className = "status-msg"; // Use existing class
+            videoPlayer.style.display = 'none';
+            placeholder.style.display = 'none'; // Hide placeholder
+            loader.style.display = 'block'; // Show loader
+
+            // Gather inputs
+            const stops = [];
             const rows = document.querySelectorAll('.stop-row');
-            const routeData = Array.from(rows).map(row => ({
-                name: row.querySelector('.input-name').value,
-                lat: parseFloat(row.querySelector('.input-lat').value),
-                lng: parseFloat(row.querySelector('.input-lng').value)
-            }));
+            rows.forEach((row, index) => {
+                const nameInput = row.querySelector('.input-name');
+                const latInput = row.querySelector('.input-lat');
+                const lngInput = row.querySelector('.input-lng');
 
-            // Validation
-            if (routeData.some(d => !d.name || isNaN(d.lat) || isNaN(d.lng))) {
-                alert("Please fill in all fields correctly.");
+                const lat = parseFloat(latInput.value);
+                const lng = parseFloat(lngInput.value);
+                const name = nameInput ? nameInput.value : '';
+
+                // Extract Vehicle Selection (per stop row)
+                let vehicle = 'plane'; // Default
+                // We search for checked radio buttons inside this row.
+                // Since we used unique names, this is safe.
+                const vehicleRadios = row.querySelectorAll('input[type="radio"]:checked');
+                if (vehicleRadios.length > 0) {
+                    vehicle = vehicleRadios[0].value;
+                }
+
+                if (name && !isNaN(lat) && !isNaN(lng)) {
+                    stops.push({ name, lat, lng, vehicle });
+                }
+            });
+
+            if (stops.length < 2) {
+                status.textContent = "Error: Please add at least 2 valid cities.";
+                status.className = "status-msg error";
+                button.disabled = false;
+                button.innerText = "Generate Video";
+                loader.style.display = 'none';
+                placeholder.style.display = 'block';
                 return;
             }
 
-            // UI State: Loading
-            btn.disabled = true;
-            btn.innerText = "Generating...";
-            placeholder.style.display = 'none';
-            videoPlayer.style.display = 'none';
-            loader.style.display = 'block';
-            status.innerText = "Processing video... This may take up to 2-3 minutes.";
+            // No global vehicle selection needed anymore
 
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(routeData)
+                    body: JSON.stringify(stops) // Payload is now just the array of stop objects with vehicle info
                 });
 
-                if (!response.ok) throw new Error("Generation failed: " + response.statusText);
+                if (!response.ok) throw new Error(await response.text());
 
                 const blob = await response.blob();
-                const videoUrl = URL.createObjectURL(blob);
+                const url = URL.createObjectURL(blob);
 
-                // UI State: Success
-                loader.style.display = 'none';
-                videoPlayer.src = videoUrl;
+                loader.style.display = 'none'; // Hide loader on success
+                videoPlayer.src = url;
                 videoPlayer.style.display = 'block';
-                videoPlayer.play();
-                status.innerText = "Video generated successfully!";
-
+                videoPlayer.play(); // Play video on success
+                status.textContent = "Video generated successfully!";
+                status.className = "status-msg success"; // Use existing class
             } catch (err) {
                 console.error(err);
                 loader.style.display = 'none';
                 placeholder.style.display = 'block';
                 placeholder.innerText = "Error: " + err.message;
                 status.innerText = "Failed to generate video.";
+                status.className = "status-msg error"; // Use existing class
             } finally {
-                btn.disabled = false;
-                btn.innerText = "Generate Video";
+                button.disabled = false;
+                button.innerText = "Generate Video"; // Reset button text
             }
         }
     </script>
