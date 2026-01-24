@@ -69,6 +69,9 @@ map.on('load', () => {
             'icon-ignore-placement': true
         }
     });
+
+    console.log("✅ Map fully loaded");
+    window.mapLoaded = true; // Signal for Puppeteer
 });
 
 // 3. Flight Planner Logic
@@ -282,9 +285,12 @@ document.getElementById('cloud-render').addEventListener('click', async () => {
 
         if (!response.ok) throw new Error('Render failed');
 
-        const blob = await response.blob();
-        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-        currentBlobUrl = URL.createObjectURL(blob);
+        const data = await response.json();
+
+        if (data.error) throw new Error(data.error);
+
+        const url = data.url;
+        currentBlobUrl = url; // It's a remote URL now
 
         // Show Preview Modal
         const modal = document.getElementById('video-modal');

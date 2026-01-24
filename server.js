@@ -6,6 +6,14 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
 import cors from "cors";
+import admin from "firebase-admin";
+
+// Initialize Firebase Admin (Auto-discovers credentials in Cloud Run)
+if (!admin.apps.length) {
+    admin.initializeApp();
+}
+
+const bucket = admin.storage().bucket();
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -15,63 +23,68 @@ const app = express();
 
 // Explicit CORS config
 app.use(cors({
-    origin: '*', // Allow all origins (including localhost)
+    origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type'],
     credentials: true
 }));
 
-app.options('*', cors()); // Enable pre-flight for all routes
+app.options('*', cors());
 
 app.use(express.json({ limit: "10mb" }));
 
-// Serves the static build of the app (needed so Puppeteer can visit localhost)
+// Serves the static build of the app
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
 
+// Simple Concurrency Lock
+let isRendering = false;
+
 app.post("/render", async (req, res) => {
-    // Default to Dubai -> Sydney if no route provided
-    const { route = ["Dubai", "Sydney"], duration = 20 } = req.body;
+    if (isRendering) {
+        return res.status(429).json({ error: "Renderer is busy. Please try again in a minute." });
+    }
 
-    console.log(`🎥 Starting render for route: ${route.join(" -> ")} (${duration}s)`);
-
-    const TOTAL_FRAMES = FPS * duration;
-
-    // In Cloud Run, write to /tmp. Locally, write to ./tmp
-    const TMP_DIR = process.env.K_SERVICE ? "/tmp" : "./tmp";
-    const FRAMES_DIR = path.join(TMP_DIR, "frames");
-    const OUTPUT = path.join(TMP_DIR, "output.mp4");
+    isRendering = true;
 
     try {
+        const { route = ["Dubai", "Sydney"], duration = 20 } = req.body;
+        console.log(`🎥 Starting render for route: ${route.join(" -> ")} (${duration}s)`);
+
+        const TOTAL_FRAMES = FPS * duration;
+        const TMP_DIR = process.env.K_SERVICE ? "/tmp" : "./tmp";
+        const FRAMES_DIR = path.join(TMP_DIR, "frames");
+        const OUTPUT = path.join(TMP_DIR, "output.mp4");
+
+        // Cleanup previous run
         if (fs.existsSync(FRAMES_DIR)) fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
+        if (fs.existsSync(OUTPUT)) fs.rmSync(OUTPUT, { force: true });
         fs.mkdirSync(FRAMES_DIR, { recursive: true });
 
         const browser = await puppeteer.launch({
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // Use installed Chrome
             headless: "new",
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--use-gl=egl" // Hardware acceleration for WebGL in container
+                "--use-gl=egl"
             ]
         });
 
         const page = await browser.newPage();
-
         await page.setViewport({ width: WIDTH, height: HEIGHT });
 
-        // Visit the app served by THIS express server (localhost)
-        // Ensure PORT is set
         const port = process.env.PORT || 8080;
         await page.goto(`http://localhost:${port}`);
 
-        // Wait for map loaded signal (we should add this to main.js if not present, or wait for #map)
-        await page.waitForSelector("#map");
+        // FIX 1: Wait for Mapbox fully loaded signal
+        await page.waitForFunction(() => window.mapLoaded === true, { timeout: 60000 });
 
-        // Hide UI for clean render
+        // Hide UI
         await page.evaluate(() => {
             const ui = document.querySelector('#planner');
             if (ui) ui.style.display = 'none';
@@ -80,18 +93,15 @@ app.post("/render", async (req, res) => {
             document.body.style.cursor = "none";
         });
 
-        // Start flight via exposed API
+        // Start flight
         await page.evaluate((cities) => {
             if (window.startFlightAutomatically) {
                 window.startFlightAutomatically(cities);
-            } else {
-                console.error("❌ window.startFlightAutomatically not found!");
             }
         }, route);
 
         console.log("📸 Capturing frames...");
 
-        // Deterministic Render Loop
         for (let i = 0; i < TOTAL_FRAMES; i++) {
             const t = i / FPS;
 
@@ -99,15 +109,13 @@ app.post("/render", async (req, res) => {
                 window.renderFrame?.(time);
             }, t);
 
-            // Small buffer to ensure WebGL repaint (if needed)
-            // with deterministic rendering usually not needed but 1ms is safe
-            // await new Promise(r => setTimeout(r, 1)); 
+            // FIX 2: GPU Flush Wait
+            await new Promise(r => setTimeout(r, 8));
 
             await page.screenshot({
                 path: path.join(FRAMES_DIR, `frame_${String(i).padStart(5, "0")}.png`)
             });
 
-            // Log progress every second (30 frames)
             if (i % 30 === 0) console.log(`   Frame ${i}/${TOTAL_FRAMES}`);
         }
 
@@ -126,17 +134,34 @@ app.post("/render", async (req, res) => {
                 .on("error", reject);
         });
 
-        console.log("✅ Video generated!");
+        console.log("☁️ Uploading to Firebase Storage...");
 
-        // Send file back
-        res.download(OUTPUT, "flight.mp4", (err) => {
-            if (err) console.error("Error sending file:", err);
-            // Cleanup happens after response? Or we can leave it for next run (Cloud Run usually cleans up /tmp on restart)
+        const destination = `videos/flight-${Date.now()}.mp4`;
+
+        await bucket.upload(OUTPUT, {
+            destination,
+            metadata: { contentType: "video/mp4" }
         });
+
+        const [url] = await bucket.file(destination).getSignedUrl({
+            action: "read",
+            expires: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+        });
+
+        console.log("✅ Render Success! URL:", url);
+
+        // FIX 3: Return JSON URL
+        res.json({ url });
+
+        // Cleanup Disk
+        fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
+        fs.rmSync(OUTPUT, { force: true });
 
     } catch (err) {
         console.error("RENDER ERROR:", err);
-        res.status(500).send("Render failed: " + err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        isRendering = false; // Release lock
     }
 });
 
