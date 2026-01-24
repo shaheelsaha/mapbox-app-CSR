@@ -13,7 +13,16 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-app.use(cors()); // Enable CORS for remote access (e.g. from localhost)
+// Explicit CORS config
+app.use(cors({
+    origin: '*', // Allow all origins (including localhost)
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true
+}));
+
+app.options('*', cors()); // Enable pre-flight for all routes
+
 app.use(express.json({ limit: "10mb" }));
 
 // Serves the static build of the app (needed so Puppeteer can visit localhost)
