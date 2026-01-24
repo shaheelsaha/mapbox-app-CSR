@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Animator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Mapbox -->
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <script
+        src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
+    <link rel="stylesheet"
+        href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css"
+        type="text/css">
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBbXRAJkL4OU5zHxK_1C9js8dPhTI38voU",
+            authDomain: "map-animator-4a34c.firebaseapp.com",
+            projectId: "map-animator-4a34c",
+            storageBucket: "map-animator-4a34c.firebasestorage.app",
+            messagingSenderId: "280013773890",
+            appId: "1:280013773890:web:68eea094d3956d951261db",
+            measurementId: "G-ERD4F8X87Y"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+    </script>
+    <style>
+        :root {
+            --bg-color: #0d0d12;
+            --surface-color: #1c1c24;
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --text-color: #ffffff;
+            --text-secondary: #9ca3af;
+            --border-radius: 12px;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border-radius: var(--border-radius);
+            padding: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stops-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stop-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr auto;
+            gap: 0.5rem;
+            animation: slideIn 0.3s ease;
+            position: relative;
+            /* For geocoder positioning context */
+            z-index: 1;
+            /* Default z-index */
+        }
+
+        /* Ensure rows with active dropdowns are on top */
+        .stop-row:focus-within {
+            z-index: 100;
+        }
+
+        /* Global Focus Reset */
+        *:focus {
+            outline: none !important;
+        }
+
+        /* Customize Mapbox Geocoder Container */
+        .mapboxgl-ctrl-geocoder {
+            background-color: var(--surface-color) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px !important;
+            box-shadow: none !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            color: white !important;
+            position: relative;
+            z-index: 10;
+            transition: all 0.2s ease;
+        }
+
+        /* Active Glow Effect for Geocoder */
+        .mapboxgl-ctrl-geocoder:focus-within {
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3) !important;
+        }
+
+        .mapboxgl-ctrl-geocoder--input {
+            color: white !important;
+            padding-left: 35px !important;
+            /* Room for search icon */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 30px !important;
+            /* Room for clear button */
+        }
+
+        .mapboxgl-ctrl-geocoder--icon-search {
+            fill: var(--text-secondary) !important;
+            top: 10px !important;
+        }
+
+        .mapboxgl-ctrl-geocoder--button {
+            background: transparent !important;
+            top: 2px !important;
+        }
+
+        .mapboxgl-ctrl-geocoder--icon-close {
+            fill: var(--text-secondary) !important;
+            margin-top: 2px;
+        }
+
+        /* Suggestions Dropdown */
+        .mapboxgl-ctrl-geocoder .suggestions {
+            background-color: #1c1c24 !important;
+            /* Hard-coded surface color for opacity */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 0 6px 6px;
+            color: white !important;
+            z-index: 1000 !important;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 100%;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
+            /* Darker shadow */
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        /* Scrollbar for suggestions */
+        .mapboxgl-ctrl-geocoder .suggestions::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .mapboxgl-ctrl-geocoder .suggestions::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .mapboxgl-ctrl-geocoder .suggestions::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        /* Ensure list items are transparent by default */
+        .mapboxgl-ctrl-geocoder .suggestions>li {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+        }
+
+        .mapboxgl-ctrl-geocoder .suggestions>li>a {
+            color: #e5e7eb !important;
+            display: block;
+            padding: 12px 16px;
+            /* Larger hit area */
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: transparent !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Hover and Active States */
+        .mapboxgl-ctrl-geocoder .suggestions>li:hover>a,
+        .mapboxgl-ctrl-geocoder .suggestions>li.active>a,
+        .mapboxgl-ctrl-geocoder .suggestions>li[aria-selected="true"]>a {
+            background-color: var(--primary-color) !important;
+            color: white !important;
+        }
+
+        /* Secondary text in suggestions (Region/Country) */
+        .mapboxgl-ctrl-geocoder--suggestion-address {
+            color: rgba(255, 255, 255, 0.6) !important;
+            font-size: 0.85em;
+            margin-top: 2px;
+            display: block;
+        }
+
+        .mapboxgl-ctrl-geocoder--powered-by {
+            display: none !important;
+        }
+
+        /* Adjusted Coordinate Inputs - Lighter and Clearer */
+        .input-lat,
+        .input-lng {
+            background-color: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            color: #a5b4fc !important;
+            /* Brighter purple/blue */
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            transition: border-color 0.2s;
+        }
+
+        .input-lat:focus,
+        .input-lng:focus {
+            border-color: var(--primary-color) !important;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        input {
+            background-color: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 0.75rem;
+            color: white;
+            font-family: inherit;
+            width: 100%;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        button {
+            cursor: pointer;
+            font-family: inherit;
+            border: none;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-icon {
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 0.75rem;
+        }
+
+        .btn-icon:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .btn-add {
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-add:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            width: 100%;
+            font-weight: 600;
+            margin-top: 1rem;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Result Area */
+        .video-container {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: black;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .placeholder-text {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--primary-color);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .status-msg {
+            margin-top: 1rem;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <!-- Input Form -->
+        <div class="card">
+            <h1>Create Flight Video</h1>
+
+            <div id="stops">
+                <!-- Stops added via JS -->
+            </div>
+
+            <button disabled>Add Stop (Max 2)</button>
+            <button onclick="generateVideo()" id="generateBtn" class="btn-primary">Generate Video</button>
+        </div>
+
+        <!-- Preview Area -->
+        <div class="card">
+            <h1>Preview</h1>
+            <div class="video-container" id="videoWrapper">
+                <div class="placeholder-text" id="placeholder">
+                    Generate a video to see it here.
+                </div>
+                <div class="loader" id="loader" style="display: none;"></div>
+                <video id="videoPlayer" controls style="display: none;"></video>
+            </div>
+            <div id="status" class="status-msg"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Mapbox with token
+        // SECURITY NOTE: For static hosting, restrict this token to your domain in the Mapbox Dashboard
+        const MAPBOX_TOKEN = 'pk.eyJ1Ijoic2hhaGVlbDU1IiwiYSI6ImNta2Q0cTNqZTA2cGszZ3M2dzVucDdsOGwifQ.WGhIdum-usVYkJJZOfr9UA';
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+
+        // Determine API URL based on environment
+        // If on localhost, use local backend. If on Firebase (or other), use Cloud Run.
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const API_URL = isLocal
+            ? "http://localhost:8080/render"
+            : "https://map-animator-280013773890.europe-west1.run.app/render";
+
+        const DEFAULT_STOPS = [
+            {}, {}
+        ];
+
+        function createStopRow(index, data = {}) {
+            const div = document.createElement('div');
+            div.className = 'stop-row';
+
+            // Unique ID for radio group
+            const groupName = `vehicle_${Date.now()}_${index}`;
+            const vehicle = data.vehicle || 'plane';
+            const isFirst = index === 0;
+
+            let vehicleHtml = '';
+            if (!isFirst) {
+                vehicleHtml = `
+                    <div style="margin-top: 10px; display: flex; gap: 15px; align-items: center; font-size: 0.9em;">
+                        <strong>Travel Mode:</strong>
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="${groupName}" value="plane" ${vehicle === 'plane' ? 'checked' : ''}> 
+                            ✈️ Flight
+                        </label>
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="${groupName}" value="train" ${vehicle === 'train' ? 'checked' : ''}> 
+                            🚆 Train
+                        </label>
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="${groupName}" value="car" ${vehicle === 'car' ? 'checked' : ''}> 
+                            🚗 Car
+                        </label>
+                    </div>
+                `;
+            }
+
+            div.innerHTML = `
+                <div class="input-group">
+                    <div class="geocoder-container"></div>
+                    <input type="hidden" class="input-lat" value="${data.lat || ''}" readonly>
+                    <input type="hidden" class="input-lng" value="${data.lng || ''}" readonly>
+                </div>
+                ${vehicleHtml}
+                <button class="btn-icon" onclick="removeStop(this)" title="Remove">✕</button>
+                <input type="hidden" class="input-name" value="${data.name || ''}"> 
+            `;
+            const geocoderContainer = div.querySelector('.geocoder-container');
+            const inputName = div.querySelector('.input-name');
+            const inputLat = div.querySelector('.input-lat');
+            const inputLng = div.querySelector('.input-lng');
+
+            const initGeocoder = () => {
+                const geocoder = new MapboxGeocoder({
+                    accessToken: mapboxgl.accessToken,
+                    mapboxgl: mapboxgl,
+                    marker: false,
+                    placeholder: 'Search for a city',
+                    types: 'place'
+                });
+
+                geocoder.on('result', function (e) {
+                    const result = e.result;
+                    inputName.value = result.text;
+                    inputLat.value = result.center[1];
+                    inputLng.value = result.center[0];
+                    console.log("Geocoder result:", result);
+                });
+
+                geocoder.on('clear', function () {
+                    inputName.value = '';
+                    inputLat.value = '';
+                    inputLng.value = '';
+                    console.log("Geocoder cleared.");
+                });
+
+                // Add the control
+                geocoderContainer.appendChild(geocoder.onAdd());
+
+                // Set initial value for geocoder if data.name exists
+                if (data.name) {
+                    geocoder.setInput(data.name);
+                }
+            };
+
+            return { element: div, init: initGeocoder };
+        }
+
+        // --- PREVIEW VISUALIZATION (Three.js) ---
+        // Setup a basic Three.js scene for the preview
+        (function initPreview() {
+            // Note: This is an optional enhancement to show the 3D globe in the background or a small preview
+            // For now, we are primarily using Mapbox for inputs and Cloud Run for the main render.
+            // But let's verify if there is a preview div? 
+            // The current UI sends data to the backend. User sees the result in <video>.
+            // However, to fix "I don't see stars", we should probably add a 3D preview if possible, 
+            // OR explicitly tell the user to look at the VIDEO.
+
+            // Re-reading user intent: "did u add this too star in backgrand". 
+            // If they are strictly looking at the video output, then my previous assumption was wrong.
+            // But usually users check the "Preview" if one exists. 
+            // Currently index.html DOES NOT have a live 3D preview, only a Video Player element.
+        })();
+
+        function addStop(data) {
+            console.log("Adding stop:", data);
+            const list = document.getElementById('stops');
+            const { element, init } = createStopRow(list.children.length, data);
+            list.appendChild(element);
+            // Initialize Mapbox Geocoder AFTER appending to DOM
+            try {
+                init();
+                console.log("Geocoder initialized for", data.name);
+            } catch (e) {
+                console.error("Geocoder init failed:", e);
+            }
+        }
+
+        async function generateVideo() {
+            const button = document.getElementById('generateBtn');
+            const status = document.getElementById('status');
+            const videoPlayer = document.getElementById('videoPlayer');
+            const loader = document.getElementById('loader'); // Keep loader for UI
+            const placeholder = document.getElementById('placeholder'); // Keep placeholder for UI
+
+            button.disabled = true;
+            button.innerText = "Generating..."; // Keep original button text change
+            status.textContent = "Generating video... (This may take 1-2 minutes)";
+            status.className = "status-msg"; // Use existing class
+            videoPlayer.style.display = 'none';
+            placeholder.style.display = 'none'; // Hide placeholder
+            loader.style.display = 'block'; // Show loader
+
+            // Gather inputs
+            const stops = [];
+            const rows = document.querySelectorAll('.stop-row');
+            rows.forEach((row, index) => {
+                const nameInput = row.querySelector('.input-name');
+                const latInput = row.querySelector('.input-lat');
+                const lngInput = row.querySelector('.input-lng');
+
+                const lat = parseFloat(latInput.value);
+                const lng = parseFloat(lngInput.value);
+                const name = nameInput ? nameInput.value : '';
+
+                // Extract Vehicle Selection (per stop row)
+                let vehicle = 'plane'; // Default
+                // We search for checked radio buttons inside this row.
+                // Since we used unique names, this is safe.
+                const vehicleRadios = row.querySelectorAll('input[type="radio"]:checked');
+                if (vehicleRadios.length > 0) {
+                    vehicle = vehicleRadios[0].value;
+                }
+
+                if (name && !isNaN(lat) && !isNaN(lng)) {
+                    stops.push({ name, lat, lng, vehicle });
+                }
+            });
+
+            if (stops.length < 2) {
+                status.textContent = "Error: Please add at least 2 valid cities.";
+                status.className = "status-msg error";
+                button.disabled = false;
+                button.innerText = "Generate Video";
+                loader.style.display = 'none';
+                placeholder.style.display = 'block';
+                return;
+            }
+
+            // No global vehicle selection needed anymore
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(stops) // Payload is now just the array of stop objects with vehicle info
+                });
+
+                if (!response.ok) throw new Error(await response.text());
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+
+                loader.style.display = 'none'; // Hide loader on success
+                videoPlayer.src = url;
+                videoPlayer.style.display = 'block';
+                videoPlayer.play(); // Play video on success
+                status.textContent = "Video generated successfully!";
+                status.className = "status-msg success"; // Use existing class
+            } catch (err) {
+                console.error(err);
+                loader.style.display = 'none';
+                placeholder.style.display = 'block';
+                placeholder.innerText = "Error: " + err.message;
+                status.innerText = "Failed to generate video.";
+                status.className = "status-msg error"; // Use existing class
+            } finally {
+                button.disabled = false;
+                button.innerText = "Generate Video"; // Reset button text
+            }
+        }
+    </script>
+</body>
+
+</html>
