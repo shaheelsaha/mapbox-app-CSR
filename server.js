@@ -71,6 +71,8 @@ app.post("/render", async (req, res) => {
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
+                "--single-process", // Critical for Cloud Run
+                "--no-zygote",      // Critical for Cloud Run
                 "--use-gl=egl"
             ]
         });
