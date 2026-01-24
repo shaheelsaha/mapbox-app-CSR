@@ -5,6 +5,7 @@ import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
+import cors from "cors";
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -12,6 +13,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+app.use(cors()); // Enable CORS for remote access (e.g. from localhost)
 app.use(express.json({ limit: "10mb" }));
 
 // Serves the static build of the app (needed so Puppeteer can visit localhost)
