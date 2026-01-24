@@ -45,10 +45,18 @@
     <div class="controls">
       <button id="add-stop" class="btn secondary">+ Add Stop</button>
       <button id="generate-flight" class="btn primary">Preview Flight ▶️</button>
-      <button id="export-video" class="btn secondary" style="background: rgba(255, 50, 50, 0.2); color: #ff6b6b;">Record
-        Screen 🔴</button>
       <button id="cloud-render" class="btn secondary" style="background: rgba(50, 50, 255, 0.2); color: #6b8aff;">Cloud
         Render ☁️</button>
+    </div>
+  </div>
+
+  <div id="video-modal" class="overlay"
+    style="display: none; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; max-width: 800px; padding: 20px; background: rgba(0,0,0,0.9); border: 1px solid #333; flex-direction: column; gap: 15px;">
+    <h2 style="color: white; margin: 0;">Rendered Video 🎥</h2>
+    <video id="preview-player" controls style="width: 100%; border-radius: 8px; border: 1px solid #444;"></video>
+    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+      <button id="close-preview" class="btn secondary">Close</button>
+      <button id="download-preview" class="btn primary">Download ⬇️</button>
     </div>
   </div>
 

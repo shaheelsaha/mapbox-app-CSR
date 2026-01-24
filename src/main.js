@@ -244,101 +244,10 @@ document.getElementById('generate-flight').addEventListener('click', async () =>
     startCinematicFlight(coordinates, fullPath, segments);
 });
 
-// Export Video Logic
-document.getElementById('export-video').addEventListener('click', async () => {
-    const btn = document.getElementById('export-video');
-    const OriginalText = btn.textContent;
-    btn.textContent = "Recording... (Wait) 🔴";
-    btn.disabled = true;
-
-    // Use the generate flight logic but with recording
-    // Trigger the same inputs as generate
-    const inputs = document.querySelectorAll('.location-input');
-    const cities = Array.from(inputs).map(input => input.value.trim()).filter(val => val !== '');
-
-    if (cities.length < 2) {
-        alert('Please enter at least a start and end location.');
-        btn.textContent = OriginalText;
-        btn.disabled = false;
-        return;
-    }
-
-    // Capture canvas stream
-    const canvas = document.querySelector('canvas');
-    if (!canvas) {
-        alert('Map canvas not found');
-        return;
-    }
-
-    const stream = canvas.captureStream(30); // 30 FPS
-    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
-    const chunks = [];
-
-    mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'flight-video.webm';
-        a.click();
-        URL.revokeObjectURL(url);
-
-        btn.textContent = OriginalText;
-        btn.disabled = false;
-        alert("Video exported! Check your downloads 📂");
-    };
-
-    mediaRecorder.start();
-
-    // Run the flight logic again (duplicate logic for now, ideally refactor later if needing DRY)
-    // For quick implementation, I'll programmatically click the generate button? 
-    // No, that would trigger standard animation without knowing when to stop.
-    // I need a way to hook into "animation finished".
-
-    // Changing approach: Programmatically trigger generate, but hook into startCinematicFlight completion?
-    // startCinematicFlight doesn't return a promise. 
-
-    // SIMPLE HACK: Calculate total duration + buffer and stop recording then.
-
-    // 1. Calculate duration
-    // We need coordinates first.
-    // Re-run geocoding here to get duration.
-    const coordinates = [];
-    for (const city of cities) {
-        const coord = await geocodeCity(city);
-        if (!coord) {
-            mediaRecorder.stop();
-            return;
-        }
-        coordinates.push(coord);
-    }
-
-    // Duplicate path gen logic needed?
-    // Let's just run startCinematicFlight and guess duration.
-
-    // Actually, startCinematicFlight takes (waypoints, fullPath, segments).
-    // I should refactor the click handler to be reusable.
-    // Ideally user clicks "Export", we run the setup, start recording, start flight, then stop after duration.
-
-    // Let's manually trigger the flight generation logic by calling the existing logic
-    // But I can't easily wait for it.
-    // Better: Just click "Generate" programmatically?
-    document.getElementById('generate-flight').click();
-
-    // Estimate Duration: (cities - 1) * 8000ms + 2000ms buffer
-    const duration = (cities.length - 1) * 8000 + 3000;
-
-    setTimeout(() => {
-        mediaRecorder.stop();
-    }, duration);
-
-});
 
 // Cloud Render Logic (Server-Side)
+let currentBlobUrl = null;
+
 document.getElementById('cloud-render').addEventListener('click', async () => {
     const btn = document.getElementById('cloud-render');
     const OriginalText = btn.textContent;
@@ -374,18 +283,16 @@ document.getElementById('cloud-render').addEventListener('click', async () => {
         if (!response.ok) throw new Error('Render failed');
 
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = URL.createObjectURL(blob);
 
-        // Trigger download
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `cloud-flight-${Date.now()}.mp4`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        // Show Preview Modal
+        const modal = document.getElementById('video-modal');
+        const player = document.getElementById('preview-player');
 
-        alert("Cloud Render Complete! Downloading Video... 🚀");
+        player.src = currentBlobUrl;
+        modal.style.display = 'flex';
+        player.play();
 
     } catch (e) {
         console.error(e);
@@ -394,6 +301,24 @@ document.getElementById('cloud-render').addEventListener('click', async () => {
         btn.textContent = OriginalText;
         btn.disabled = false;
     }
+});
+
+// Modal Controls
+document.getElementById('close-preview').addEventListener('click', () => {
+    const modal = document.getElementById('video-modal');
+    const player = document.getElementById('preview-player');
+    player.pause();
+    modal.style.display = 'none';
+});
+
+document.getElementById('download-preview').addEventListener('click', () => {
+    if (!currentBlobUrl) return;
+    const a = document.createElement('a');
+    a.href = currentBlobUrl;
+    a.download = `cloud-flight-${Date.now()}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 });
 
 function startCinematicFlight(waypoints, fullPath) {
