@@ -326,7 +326,6 @@ document.getElementById('export-video').addEventListener('click', async () => {
 
     // Let's manually trigger the flight generation logic by calling the existing logic
     // But I can't easily wait for it.
-
     // Better: Just click "Generate" programmatically?
     document.getElementById('generate-flight').click();
 
@@ -337,6 +336,64 @@ document.getElementById('export-video').addEventListener('click', async () => {
         mediaRecorder.stop();
     }, duration);
 
+});
+
+// Cloud Render Logic (Server-Side)
+document.getElementById('cloud-render').addEventListener('click', async () => {
+    const btn = document.getElementById('cloud-render');
+    const OriginalText = btn.textContent;
+    btn.textContent = "Rendering in Cloud... (Wait ~20s) ☁️";
+    btn.disabled = true;
+
+    // Get Cities
+    const inputs = document.querySelectorAll('.location-input');
+    const cities = Array.from(inputs).map(input => input.value.trim()).filter(val => val !== '');
+
+    if (cities.length < 2) {
+        alert('Please enter at least a start and end location.');
+        btn.textContent = OriginalText;
+        btn.disabled = false;
+        return;
+    }
+
+    try {
+        const IS_DEV = window.location.hostname === 'localhost';
+        const API_URL = IS_DEV
+            ? 'https://mapbox-app-280013773890.europe-west1.run.app/render' // Dev: hit prod
+            : '/render'; // Prod: relative path (same server)
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                route: cities,
+                duration: 20 // Default duration
+            })
+        });
+
+        if (!response.ok) throw new Error('Render failed');
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        // Trigger download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cloud-flight-${Date.now()}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert("Cloud Render Complete! Downloading Video... 🚀");
+
+    } catch (e) {
+        console.error(e);
+        alert("Cloud Render Failed: " + e.message);
+    } finally {
+        btn.textContent = OriginalText;
+        btn.disabled = false;
+    }
 });
 
 function startCinematicFlight(waypoints, fullPath) {
