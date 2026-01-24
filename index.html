@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapbox Visualization</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #map {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="planner" class="overlay">
+    <h1>Flight Planner ✈️</h1>
+    <div id="inputs">
+      <div class="input-group">
+        <input type="text" placeholder="Start Location (e.g. Dubai)" class="location-input" autocomplete="off">
+        <div class="suggestions"></div>
+      </div>
+      <div class="input-group">
+        <input type="text" placeholder="Destination (e.g. New York)" class="location-input" autocomplete="off">
+        <div class="suggestions"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="add-stop" class="btn secondary">+ Add Stop</button>
+      <button id="generate-flight" class="btn primary">Generate Flight 🚀</button>
+    </div>
+  </div>
+
+  <div id="map" style="width: 100vw; height: 100vh;"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
