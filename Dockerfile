@@ -1,36 +1,34 @@
-# Use official Node.js image (Debian based)
-FROM node:18
+FROM node:20
 
-# Install dependencies for Puppeteer (Chrome) and FFMPEG
-# We use the stable chrome installation instructions for Debian
-RUN apt-get update \
-    && apt-get install -y wget gnupg \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
-    && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 ffmpeg \
-    --no-install-recommends \
+# Install system dependencies (Chrome + FFmpeg)
+RUN apt-get update && apt-get install -y \
+    chromium \
+    ffmpeg \
+    fonts-liberation \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy package info
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy application files
+# Copy source code
 COPY . .
 
-# Environment variables
-ENV PORT=8080
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# Build the frontend (Vite -> dist/)
+# This allows server.js to serve the app locally to Puppeteer
+RUN npm run build
 
-# Expose port
+# Environment variables
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PORT=8080
+
 EXPOSE 8080
 
-# Start server
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

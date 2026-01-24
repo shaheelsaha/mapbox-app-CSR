@@ -28,9 +28,6 @@ const map = new mapboxgl.Map({
     projection: 'globe' // Display the map as a globe, since zoom is low
 });
 
-let planeMarker;
-
-
 map.on('load', () => {
     map.setFog({
         color: 'rgb(186, 210, 235)', // Lower atmosphere
@@ -42,30 +39,36 @@ map.on('load', () => {
 
     map.resize();
 
-    // ⭐ Final plane marker setup
-    const planeEl = document.createElement('div');
+    // ⭐ Final plane marker setup (Symbol Layer)
+    map.loadImage('/plane.png', (error, image) => {
+        if (error) throw error;
+        if (!map.hasImage('plane')) map.addImage('plane', image);
+    });
 
-    planeEl.innerHTML = `
-    <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor" style="transition: transform 0.06s linear; transform-origin: center;">
-        <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"></path>
-    </svg>
-    `;
+    map.addSource('plane-source', {
+        type: 'geojson',
+        data: {
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [0, 0] // initial
+            }
+        }
+    });
 
-    planeEl.style.color = "white";
-    planeEl.style.width = "32px";
-    planeEl.style.height = "32px";
-    planeEl.style.pointerEvents = "none";
-    planeEl.style.filter = "drop-shadow(0 0 6px rgba(255,255,255,0.8))";
-
-    planeMarker = new mapboxgl.Marker({
-        element: planeEl,
-        anchor: 'center'
-    })
-        .setLngLat([0, 0])
-        .addTo(map);
-
-    // hide initially
-    planeMarker.getElement().style.opacity = '0';
+    map.addLayer({
+        id: 'plane-layer',
+        type: 'symbol',
+        source: 'plane-source',
+        layout: {
+            'icon-image': 'plane',
+            'icon-size': 0.05, // Adjusted for 1024px PNG
+            'icon-rotate': ['+', ['get', 'bearing'], -45],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+        }
+    });
 });
 
 // 3. Flight Planner Logic
@@ -241,6 +244,101 @@ document.getElementById('generate-flight').addEventListener('click', async () =>
     startCinematicFlight(coordinates, fullPath, segments);
 });
 
+// Export Video Logic
+document.getElementById('export-video').addEventListener('click', async () => {
+    const btn = document.getElementById('export-video');
+    const OriginalText = btn.textContent;
+    btn.textContent = "Recording... (Wait) 🔴";
+    btn.disabled = true;
+
+    // Use the generate flight logic but with recording
+    // Trigger the same inputs as generate
+    const inputs = document.querySelectorAll('.location-input');
+    const cities = Array.from(inputs).map(input => input.value.trim()).filter(val => val !== '');
+
+    if (cities.length < 2) {
+        alert('Please enter at least a start and end location.');
+        btn.textContent = OriginalText;
+        btn.disabled = false;
+        return;
+    }
+
+    // Capture canvas stream
+    const canvas = document.querySelector('canvas');
+    if (!canvas) {
+        alert('Map canvas not found');
+        return;
+    }
+
+    const stream = canvas.captureStream(30); // 30 FPS
+    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+    const chunks = [];
+
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'flight-video.webm';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        btn.textContent = OriginalText;
+        btn.disabled = false;
+        alert("Video exported! Check your downloads 📂");
+    };
+
+    mediaRecorder.start();
+
+    // Run the flight logic again (duplicate logic for now, ideally refactor later if needing DRY)
+    // For quick implementation, I'll programmatically click the generate button? 
+    // No, that would trigger standard animation without knowing when to stop.
+    // I need a way to hook into "animation finished".
+
+    // Changing approach: Programmatically trigger generate, but hook into startCinematicFlight completion?
+    // startCinematicFlight doesn't return a promise. 
+
+    // SIMPLE HACK: Calculate total duration + buffer and stop recording then.
+
+    // 1. Calculate duration
+    // We need coordinates first.
+    // Re-run geocoding here to get duration.
+    const coordinates = [];
+    for (const city of cities) {
+        const coord = await geocodeCity(city);
+        if (!coord) {
+            mediaRecorder.stop();
+            return;
+        }
+        coordinates.push(coord);
+    }
+
+    // Duplicate path gen logic needed?
+    // Let's just run startCinematicFlight and guess duration.
+
+    // Actually, startCinematicFlight takes (waypoints, fullPath, segments).
+    // I should refactor the click handler to be reusable.
+    // Ideally user clicks "Export", we run the setup, start recording, start flight, then stop after duration.
+
+    // Let's manually trigger the flight generation logic by calling the existing logic
+    // But I can't easily wait for it.
+
+    // Better: Just click "Generate" programmatically?
+    document.getElementById('generate-flight').click();
+
+    // Estimate Duration: (cities - 1) * 8000ms + 2000ms buffer
+    const duration = (cities.length - 1) * 8000 + 3000;
+
+    setTimeout(() => {
+        mediaRecorder.stop();
+    }, duration);
+
+});
+
 function startCinematicFlight(waypoints, fullPath) {
 
     const durationPerSegment = 8000; // 8s between cities (cinematic slow)
@@ -248,8 +346,10 @@ function startCinematicFlight(waypoints, fullPath) {
 
     const startTime = performance.now();
 
-    // Show plane when flight starts
-    if (planeMarker) planeMarker.getElement().style.opacity = '1';
+    // Show plane when flight starts (if using layer opacity, but here we just update position)
+    // If we wanted to hide/show, we could toggle layer visibility. 
+    // For now, let's assume it jumps to start.
+
 
 
     const EAGLE_PITCH = 8;
@@ -267,11 +367,7 @@ function startCinematicFlight(waypoints, fullPath) {
 
     const routeSource = map.getSource('route');
 
-    function animate(now) {
-
-        const elapsed = now - startTime;
-        let t = elapsed / totalDuration;
-
+    function updateFrame(t) {
         if (t > 1) t = 1;
 
         // which segment we are in
@@ -323,40 +419,49 @@ function startCinematicFlight(waypoints, fullPath) {
             });
         }
 
-        // ⭐ Plane follow logic
-        if (planeMarker) {
+        // ⭐ Plane follow logic (Layer based)
+        const planeSource = map.getSource('plane-source');
+        if (planeSource) {
 
-            planeMarker.setLngLat([lng, lat]);
+            // Calculate bearing
+            // Note: atan2(dx, dy) = angle from North (Y axis), which is Mapbox bearing.
+            // dLat is Y, dLng is X. 
+            // Standard Math.atan2(y, x). 
+            // We want bearing (0 is North, 90 is East).
+            // Bearing = atan2(dLng, dLat) * 180 / PI. 
+            // Wait, previous code used atan2(target[0] - lng, target[1] - lat). 
+            // target[0]-lng = dLng (dx). target[1]-lat = dLat (dy).
+            // atan2(dx, dy).
+            // If x=0, y=1 (North), atan2(0, 1) = 0. Correct.
+            // If x=1, y=0 (East), atan2(1, 0) = 90. Correct.
+            // So the formula `Math.atan2(target[0] - lng, target[1] - lat)` is correct for Bearings.
 
-            const angle =
-                Math.atan2(target[0] - lng, target[1] - lat) * 180 / Math.PI;
+            const angle = Math.atan2(target[0] - lng, target[1] - lat) * 180 / Math.PI;
 
-            // adjust for generic plane icon orientation (pointing up by default)
-            // The icon I used points UP (0 deg), atan2 returns angle from X axis (Right).
-            // Usually plane icons point UP. atan2(y,x).
-            // Wait, typical SVG plane points UP. 0 deg bearing in Mapbox is North (Up).
-            // arc bearing: atan2(dLng, dLat).
-            // Let's stick to the user's logic exactly, but maybe adjust rotation offset if needed.
-            // User logic: atan2(target[0] - lng, target[1] - lat). This is atan2(dx, dy).
-            // standard atan2 is (y, x).
-            // if args are (dx, dy), it returns angle from Y axis (North/Up)-- which is correct for Bearing!
-            // So if the icon points UP, `rotate(${angle}deg)` should work assuming angle is deg COG.
-
-            // Correction: atan2(dx, dy) is NOT standard JS Math.atan2(y, x).
-            // User code: Math.atan2(target[0] - lng, target[1] - lat).
-            // target[0] is Lng (X), target[1] is Lat (Y).
-            // So this is atan2(dX, dY).
-            // Math.atan2(y, x) -> angle from X axis.
-            // Math.atan2(dX, dY) -> angle from Y axis (if we map X->Y, Y->X).
-            // Actually: atan2(x, y) gives angle from Y axis (North) in clockwise direction? No.
-            // Let's trust the user's formula for now OR implement standard bearing calc.
-
-            const svg = planeMarker.getElement().querySelector('svg');
-            if (svg) {
-                svg.style.transform = `rotate(${angle}deg)`;
-            }
+            planeSource.setData({
+                type: 'Feature',
+                properties: {
+                    bearing: angle
+                },
+                geometry: {
+                    type: 'Point',
+                    coordinates: [lng, lat]
+                }
+            });
         }
+    }
 
+    // Expose for manual control (Puppeteer)
+    window.renderFrame = (seconds) => {
+        const t = (seconds * 1000) / totalDuration;
+        updateFrame(t);
+    };
+
+    function animate(now) {
+        const elapsed = now - startTime;
+        let t = elapsed / totalDuration;
+
+        updateFrame(t);
 
         if (t < 1) requestAnimationFrame(animate);
     }
@@ -366,6 +471,68 @@ function startCinematicFlight(waypoints, fullPath) {
 
 // Add navigation controls
 map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
+
+// ✅ EXPOSE FOR PUPPETEER
+window.startFlightAutomatically = async () => {
+    // 1. Geocode default route
+    const cities = ["Dubai", "Sydney"];
+    const coordinates = [];
+
+    for (const city of cities) {
+        const coord = await geocodeCity(city);
+        if (!coord) return;
+        coordinates.push(coord);
+    }
+
+    // 2. Generate Path
+    let fullPath = [];
+    const segments = [];
+
+    for (let i = 0; i < coordinates.length - 1; i++) {
+        const start = coordinates[i];
+        const end = coordinates[i + 1];
+        const segmentArc = createArc(start, end, 200, 40);
+
+        const startIndex = fullPath.length;
+        fullPath = fullPath.concat(segmentArc);
+        const endIndex = fullPath.length - 1;
+
+        segments.push({ start: startIndex, end: endIndex });
+    }
+
+    // 3. Set Route Source
+    const routeSource = map.getSource('route');
+    const geoJsonData = {
+        type: 'Feature',
+        geometry: {
+            type: 'LineString',
+            coordinates: []
+        }
+    };
+
+    if (routeSource) {
+        routeSource.setData(geoJsonData);
+    } else {
+        map.addSource('route', {
+            type: 'geojson',
+            data: geoJsonData
+        });
+        map.addLayer({
+            id: 'route-line',
+            type: 'line',
+            source: 'route',
+            paint: {
+                'line-color': '#FFD166',
+                'line-width': 3,
+                'line-opacity': 0.9,
+                'line-blur': 1
+            }
+        });
+    }
+
+    // 4. Start
+    startCinematicFlight(coordinates, fullPath, segments);
+};
 
 // Resize map on load and window resize
 
