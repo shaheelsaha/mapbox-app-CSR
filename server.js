@@ -10,7 +10,9 @@ import admin from "firebase-admin";
 
 // Initialize Firebase Admin (Auto-discovers credentials in Cloud Run)
 if (!admin.apps.length) {
-    admin.initializeApp();
+    admin.initializeApp({
+        storageBucket: "map-animator-4a34c.firebasestorage.app"
+    });
 }
 
 const bucket = admin.storage().bucket();
