@@ -72,15 +72,21 @@ app.post("/render", async (req, res) => {
         fs.mkdirSync(FRAMES_DIR, { recursive: true });
 
         // Launch Chromium
+        const launchArgs = [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage"
+        ];
+
+        // Only use SwiftShader on Cloud Run (headless CPU environment)
+        if (process.env.K_SERVICE) {
+            launchArgs.push("--use-gl=swiftshader");
+        }
+
         const browser = await puppeteer.launch({
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // Cloud Run system chrome
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
             headless: "new",
-            args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--use-gl=swiftshader" // ⭐ MUST for Mapbox on Cloud Run
-            ]
+            args: launchArgs
         });
 
         const page = await browser.newPage();
