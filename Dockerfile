@@ -8,11 +8,8 @@ RUN apt-get update && apt-get install -y \
     libnss3 \
     libxss1 \
     libasound2 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
     libgl1-mesa-glx \
     libgl1-mesa-dri \
-    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -32,4 +29,4 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24", "npm", "start"]
+CMD ["npm", "start"]

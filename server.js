@@ -82,18 +82,19 @@ app.post("/render", async (req, res) => {
         launchArgs.push(
             "--enable-webgl",
             "--ignore-gpu-blocklist",
-            "--use-gl=swiftshader",  // Force software rendering for WebGL
+            "--use-gl=angle",       // 🟢 MODERN FIX: Use Angle...
+            "--use-angle=swiftshader", // ...backed by SwiftShader
             "--no-first-run",
             "--hide-scrollbars",
             "--mute-audio",
-            "--disable-vulkan",      // Simplify graphics pipeline
-            "--disable-gpu-sandbox", // Common fix for docker containers
-            "--disable-accelerated-2d-canvas" // Force software canvas
+            "--disable-vulkan",
+            "--disable-gpu-sandbox",
+            "--disable-accelerated-2d-canvas"
         );
 
         const browser = await puppeteer.launch({
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-            headless: false, // 🟢 XVFB requires headless: false to emulate real display
+            headless: "new", // Revert to new headless mode (more stable)
             args: launchArgs
         });
 
