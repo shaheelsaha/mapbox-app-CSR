@@ -7,16 +7,15 @@ const PORT = process.env.PORT || 8080;
 app.get("/render", async (req, res) => {
     try {
         const browser = await puppeteer.launch({
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
             headless: "new",
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-
-                "--use-gl=swiftshader",        // ⭐ REQUIRED
-                "--enable-webgl",             // ⭐ REQUIRED
-                "--ignore-gpu-blocklist",     // ⭐ REQUIRED
-                "--disable-gpu"               // helps Cloud Run
+                "--use-gl=swiftshader",
+                "--enable-webgl",
+                "--ignore-gpu-blocklist"
             ]
         });
 
