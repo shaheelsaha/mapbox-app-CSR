@@ -83,7 +83,14 @@ app.post("/render", async (req, res) => {
         await page.setViewport({ width: WIDTH, height: HEIGHT });
 
         const port = process.env.PORT || 8080;
-        await page.goto(`http://localhost:${port}`);
+
+        // Give Express time to boot (Cloud Run cold start safe)
+        await new Promise(r => setTimeout(r, 3000));
+
+        await page.goto(`http://localhost:${port}`, {
+            waitUntil: "networkidle0",
+            timeout: 120000
+        });
 
         // FIX 1: Wait for Mapbox fully loaded signal
         await page.waitForFunction(() => window.mapLoaded === true, { timeout: 60000 });
@@ -172,4 +179,5 @@ app.post("/render", async (req, res) => {
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Render Server running on port ${PORT}`);
+    console.log("Server ready to accept connections");
 });
