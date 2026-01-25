@@ -7,8 +7,7 @@ const PORT = process.env.PORT || 8080;
 app.get("/render", async (req, res) => {
     try {
         const browser = await puppeteer.launch({
-            executablePath: "/usr/bin/chromium",   // force system chromium
-            headless: "shell",                     // ⭐ REAL LEGACY HEADLESS (headless: true = new mode in v22+)
+            headless: true,
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",

@@ -2,7 +2,6 @@ FROM node:20-slim
 
 # Install Chromium deps + WebGL libs + ffmpeg
 RUN apt-get update && apt-get install -y \
-    chromium \
     ffmpeg \
     ca-certificates \
     fonts-liberation \
@@ -33,7 +32,7 @@ RUN npm install
 
 COPY . .
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 
 EXPOSE 8080
 
