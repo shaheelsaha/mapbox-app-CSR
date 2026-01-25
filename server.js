@@ -97,10 +97,10 @@ app.post("/render", async (req, res) => {
 
         await page.setViewport({ width: WIDTH, height: HEIGHT });
 
-        console.log("🌍 Opening site:", PUBLIC_URL);
-
-        // Load Public Site
-        await page.goto(PUBLIC_URL, { waitUntil: "networkidle2", timeout: 120000 });
+        // Load Public Site (with cache busting)
+        const urlWithCacheBuster = `${PUBLIC_URL}?t=${Date.now()}`;
+        console.log("🌍 Opening site:", urlWithCacheBuster);
+        await page.goto(urlWithCacheBuster, { waitUntil: "networkidle2", timeout: 120000 });
 
         // Wait for Canvas (Mapbox)
         await page.waitForSelector("canvas", { timeout: 60000 });
