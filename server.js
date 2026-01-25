@@ -12,9 +12,11 @@ app.get("/render", async (req, res) => {
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--use-gl=swiftshader",   // ⭐ CRITICAL
-                "--enable-webgl",
-                "--ignore-gpu-blocklist"
+
+                "--use-gl=swiftshader",        // ⭐ REQUIRED
+                "--enable-webgl",             // ⭐ REQUIRED
+                "--ignore-gpu-blocklist",     // ⭐ REQUIRED
+                "--disable-gpu"               // helps Cloud Run
             ]
         });
 
@@ -31,6 +33,16 @@ app.get("/render", async (req, res) => {
             "https://map-animator-4a34c.web.app/",
             { waitUntil: "networkidle2" }
         );
+
+        const webgl = await page.evaluate(() => {
+            const canvas = document.createElement("canvas");
+            return !!(
+                canvas.getContext("webgl") ||
+                canvas.getContext("experimental-webgl")
+            );
+        });
+
+        console.log("WebGL working:", webgl);
 
         await page.waitForSelector("canvas");
 
