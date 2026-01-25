@@ -1,6 +1,7 @@
-FROM node:20
+FROM node:20-slim
 
 # Install system dependencies (Chrome + FFmpeg)
+# We need these for Puppeteer and fluent-ffmpeg
 RUN apt-get update && apt-get install -y \
     chromium \
     ffmpeg \
@@ -14,15 +15,15 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy package info
+# install deps
 COPY package*.json ./
 RUN npm install
 
-# Copy source code
+# copy source
 COPY . .
 
-# Build the frontend (Vite -> dist/)
-# This allows server.js to serve the app locally to Puppeteer
+# 🔥 BUILD FRONTEND INSIDE CONTAINER
+# This ensures server.js can serve the exact code Puppeteer sees
 RUN npm run build
 
 # Environment variables

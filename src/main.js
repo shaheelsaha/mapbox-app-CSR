@@ -269,10 +269,9 @@ document.getElementById('cloud-render').addEventListener('click', async () => {
     }
 
     try {
-        const IS_DEV = window.location.hostname === 'localhost';
-        const API_URL = IS_DEV
-            ? 'https://mapbox-app-280013773890.europe-west1.run.app/render' // Dev: hit prod
-            : '/render'; // Prod: relative path (same server)
+
+        // Point directly to Cloud Run (Firebase Hosting doesn't proxy by default)
+        const API_URL = 'https://mapbox-app-280013773890.europe-west1.run.app/render';
 
         const response = await fetch(API_URL, {
             method: 'POST',
