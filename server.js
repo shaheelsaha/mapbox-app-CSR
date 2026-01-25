@@ -4,11 +4,21 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from 'url';
 import cors from "cors";
 import admin from "firebase-admin";
+import { fileURLToPath } from "url";
 
-// Initialize Firebase Admin (Auto-discovers credentials in Cloud Run)
+/* -------------------------------------------------- */
+/* 🔹 Setup Paths */
+/* -------------------------------------------------- */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/* -------------------------------------------------- */
+/* 🔹 Firebase (Cloud Run auto auth) */
+/* -------------------------------------------------- */
+
 if (!admin.apps.length) {
     admin.initializeApp({
         storageBucket: "map-animator-4a34c.firebasestorage.app"
@@ -17,184 +27,180 @@ if (!admin.apps.length) {
 
 const bucket = admin.storage().bucket();
 
-// Fix __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/* -------------------------------------------------- */
+/* 🔹 Express */
+/* -------------------------------------------------- */
 
 const app = express();
 
-// Explicit CORS config
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type'],
-    credentials: true
-}));
-
-app.options(/(.*)/, cors());
-
+app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// Serves the static build of the app
-app.use(express.static(path.join(__dirname, 'dist')));
+// serve built frontend (dist folder)
+app.use(express.static(path.join(__dirname, "dist")));
 
-const WIDTH = 1920;
+/* -------------------------------------------------- */
+/* 🔹 Config */
+/* -------------------------------------------------- */
+
+const WIDTH = 1920; // change to 3840 for 4K
 const HEIGHT = 1080;
 const FPS = 30;
 
-// Simple Concurrency Lock
 let isRendering = false;
 
+/* -------------------------------------------------- */
+/* 🔹 Render Endpoint */
+/* -------------------------------------------------- */
+
 app.post("/render", async (req, res) => {
+
     if (isRendering) {
-        return res.status(429).json({ error: "Renderer is busy. Please try again in a minute." });
+        return res.status(429).json({ error: "Renderer busy. Try again." });
     }
 
     isRendering = true;
 
     try {
         const { route = ["Dubai", "Sydney"], duration = 20 } = req.body;
-        console.log(`🎥 Starting render for route: ${route.join(" -> ")} (${duration}s)`);
+
+        console.log("� Render request:", route);
 
         const TOTAL_FRAMES = FPS * duration;
+
         const TMP_DIR = process.env.K_SERVICE ? "/tmp" : "./tmp";
         const FRAMES_DIR = path.join(TMP_DIR, "frames");
         const OUTPUT = path.join(TMP_DIR, "output.mp4");
 
-        // Cleanup previous run
-        if (fs.existsSync(FRAMES_DIR)) fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
-        if (fs.existsSync(OUTPUT)) fs.rmSync(OUTPUT, { force: true });
+        /* ---------- cleanup ---------- */
+
+        fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
         fs.mkdirSync(FRAMES_DIR, { recursive: true });
 
-        const isCloudRun = !!process.env.K_SERVICE;
-
-        const launchArgs = [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage"
-        ];
-
-        if (isCloudRun) {
-            launchArgs.push(
-                "--single-process",
-                "--no-zygote",
-                "--use-gl=egl"
-            );
-        }
+        /* ---------- launch chromium ---------- */
 
         const browser = await puppeteer.launch({
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // system chromium
             headless: "new",
-            args: launchArgs
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--single-process",
+                "--no-zygote"
+            ]
         });
 
         const page = await browser.newPage();
-        await page.setViewport({ width: WIDTH, height: HEIGHT });
 
-        const port = process.env.PORT || 8080;
-
-        // Give Express time to boot (Cloud Run cold start safe)
-        await new Promise(r => setTimeout(r, 3000));
-
-        // Use public URL on Cloud Run to avoid localhost starvation/timeout
-        // isCloudRun already defined above
-        const targetUrl = isCloudRun
-            ? "https://map-animator-4a34c.web.app"
-            : `http://localhost:${port}`;
-
-        console.log(`🌍 Puppeteer visiting: ${targetUrl}`);
-
-        await page.goto(targetUrl, {
-            waitUntil: "domcontentloaded",
-            timeout: 120000
+        await page.setViewport({
+            width: WIDTH,
+            height: HEIGHT
         });
 
-        // FIX 1: Wait for Mapbox fully loaded signal
-        await page.waitForFunction(() => window.mapLoaded === true, { timeout: 60000 });
+        /* -------------------------------------------------- */
+        /* ⭐ CRITICAL FIX: load LOCAL FILE (NOT URL)         */
+        /* -------------------------------------------------- */
 
-        // Hide UI
-        await page.evaluate(() => {
-            const ui = document.querySelector('#planner');
-            if (ui) ui.style.display = 'none';
-            const controls = document.querySelector('.mapboxgl-control-container');
-            if (controls) controls.style.display = 'none';
-            document.body.style.cursor = "none";
+        const filePath = `file://${path.join(__dirname, "dist/index.html")}`;
+
+        console.log("📂 Loading:", filePath);
+
+        await page.goto(filePath, {
+            waitUntil: "load",
+            timeout: 0
         });
 
-        // Start flight
+        /* ---------- wait for map ---------- */
+
+        await page.waitForFunction(() => window.mapLoaded === true);
+
+        /* ---------- start flight ---------- */
+
         await page.evaluate((cities) => {
-            if (window.startFlightAutomatically) {
-                window.startFlightAutomatically(cities);
-            }
+            window.startFlightAutomatically(cities);
         }, route);
 
         console.log("📸 Capturing frames...");
 
+        /* ---------- capture frames ---------- */
+
         for (let i = 0; i < TOTAL_FRAMES; i++) {
+
             const t = i / FPS;
 
-            await page.evaluate((time) => {
-                window.renderFrame?.(time);
+            await page.evaluate(time => {
+                window.renderFrame(time);
             }, t);
 
-            // FIX 2: GPU Flush Wait
-            await new Promise(r => setTimeout(r, 8));
-
             await page.screenshot({
-                path: path.join(FRAMES_DIR, `frame_${String(i).padStart(5, "0")}.png`)
+                path: path.join(FRAMES_DIR, `frame_${String(i).padStart(5, "0")}.jpg`),
+                type: "jpeg",
+                quality: 95
             });
 
-            if (i % 30 === 0) console.log(`   Frame ${i}/${TOTAL_FRAMES}`);
+            if (i % 30 === 0) {
+                console.log(`Frame ${i}/${TOTAL_FRAMES}`);
+            }
         }
 
         await browser.close();
 
-        console.log("🎬 Encoding video...");
+        console.log("� Encoding video...");
+
+        /* ---------- encode ---------- */
 
         await new Promise((resolve, reject) => {
             ffmpeg()
-                .input(path.join(FRAMES_DIR, "frame_%05d.png"))
+                .input(path.join(FRAMES_DIR, "frame_%05d.jpg"))
                 .inputFPS(FPS)
                 .setFfmpegPath(ffmpegPath)
-                .outputOptions(["-c:v libx264", "-pix_fmt yuv420p", "-crf 18", "-preset fast"])
+                .outputOptions([
+                    "-c:v libx264",
+                    "-pix_fmt yuv420p",
+                    "-crf 18",
+                    "-preset fast"
+                ])
                 .save(OUTPUT)
                 .on("end", resolve)
                 .on("error", reject);
         });
 
-        console.log("☁️ Uploading to Firebase Storage...");
+        console.log("☁️ Uploading to Firebase...");
 
-        const destination = `videos/flight-${Date.now()}.mp4`;
+        /* ---------- upload ---------- */
+
+        const filename = `videos/flight-${Date.now()}.mp4`;
 
         await bucket.upload(OUTPUT, {
-            destination,
+            destination: filename,
             metadata: { contentType: "video/mp4" }
         });
 
-        const [url] = await bucket.file(destination).getSignedUrl({
+        const [url] = await bucket.file(filename).getSignedUrl({
             action: "read",
-            expires: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+            expires: Date.now() + 24 * 60 * 60 * 1000
         });
 
-        console.log("✅ Render Success! URL:", url);
+        console.log("✅ Done:", url);
 
-        // FIX 3: Return JSON URL
         res.json({ url });
 
-        // Cleanup Disk
-        fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
-        fs.rmSync(OUTPUT, { force: true });
-
     } catch (err) {
-        console.error("RENDER ERROR:", err);
+        console.error(err);
         res.status(500).json({ error: err.message });
-    } finally {
-        isRendering = false; // Release lock
+    }
+    finally {
+        isRendering = false;
     }
 });
 
+/* -------------------------------------------------- */
+/* 🔹 Start Server */
+/* -------------------------------------------------- */
+
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Render Server running on port ${PORT}`);
-    console.log("Server ready to accept connections");
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Renderer running on port ${PORT}`);
 });
