@@ -381,6 +381,8 @@ function startCinematicFlight(waypoints, fullPath) {
         const head = fullPath[headIndex];
         const target = fullPath[lookAhead];
 
+        if (!head || !target) return; // Safety check
+
         const lng = head[0];
         const lat = head[1];
 
@@ -467,6 +469,14 @@ map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
 
 // ✅ EXPOSE FOR PUPPETEER
 window.startFlightAutomatically = async (inputCities) => {
+    // 🎥 CINEMATIC CLEAN MODE: Hide UI
+    const card = document.querySelector('.card');
+    if (card) card.style.display = 'none';
+
+    // Hide zoom controls
+    const controls = document.querySelector('.mapboxgl-control-container');
+    if (controls) controls.style.display = 'none';
+
     // 1. Geocode default route
     const cities = (inputCities && inputCities.length >= 2) ? inputCities : ["Dubai", "Sydney"];
     const coordinates = [];
