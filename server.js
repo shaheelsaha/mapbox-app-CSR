@@ -19,6 +19,9 @@ app.get("/render", async (req, res) => {
             ]
         });
 
+        console.log("Browser version:", await browser.version());
+        console.log("Executable path:", browser.process().spawnfile);
+
         const page = await browser.newPage();
 
         await page.setViewport({
