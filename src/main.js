@@ -463,9 +463,9 @@ function startCinematicFlight(waypoints, fullPath) {
 map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
 
 // ✅ EXPOSE FOR PUPPETEER
-window.startFlightAutomatically = async () => {
+window.startFlightAutomatically = async (inputCities) => {
     // 1. Geocode default route
-    const cities = ["Dubai", "Sydney"];
+    const cities = (inputCities && inputCities.length >= 2) ? inputCities : ["Dubai", "Sydney"];
     const coordinates = [];
 
     for (const city of cities) {
