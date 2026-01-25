@@ -113,7 +113,8 @@ app.post("/render", async (req, res) => {
 
         /* ---------- wait for map ---------- */
 
-        await page.waitForFunction(() => window.mapLoaded === true);
+        // Wait for Mapbox canvas to appear (more reliable than window variable)
+        await page.waitForSelector("canvas.mapboxgl-canvas", { timeout: 60000 });
 
         /* ---------- start flight ---------- */
 

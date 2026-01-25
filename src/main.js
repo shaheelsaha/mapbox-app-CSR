@@ -29,6 +29,9 @@ const map = new mapboxgl.Map({
 });
 
 map.on('load', () => {
+    window.mapLoaded = true;
+    console.log("✅ Map loaded signal sent");
+
     map.setFog({
         color: 'rgb(186, 210, 235)', // Lower atmosphere
         'high-color': 'rgb(36, 92, 223)', // Upper atmosphere
