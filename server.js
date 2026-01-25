@@ -66,17 +66,26 @@ app.post("/render", async (req, res) => {
         if (fs.existsSync(OUTPUT)) fs.rmSync(OUTPUT, { force: true });
         fs.mkdirSync(FRAMES_DIR, { recursive: true });
 
-        const browser = await puppeteer.launch({
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // Use installed Chrome
-            headless: "new",
-            args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--single-process", // Critical for Cloud Run
-                "--no-zygote",      // Critical for Cloud Run
+        const isCloudRun = !!process.env.K_SERVICE;
+
+        const launchArgs = [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage"
+        ];
+
+        if (isCloudRun) {
+            launchArgs.push(
+                "--single-process",
+                "--no-zygote",
                 "--use-gl=egl"
-            ]
+            );
+        }
+
+        const browser = await puppeteer.launch({
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+            headless: "new",
+            args: launchArgs
         });
 
         const page = await browser.newPage();
