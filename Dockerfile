@@ -1,7 +1,6 @@
 FROM node:20-slim
 
-# Install system dependencies (Chrome + FFmpeg)
-# We need these for Puppeteer and fluent-ffmpeg
+# Install system deps for Chromium + FFmpeg
 RUN apt-get update && apt-get install -y \
     chromium \
     ffmpeg \
@@ -11,22 +10,22 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
+    libgbm1 \
+    libdrm2 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# install deps
+# Install deps (skip Puppeteer Chrome download)
 COPY package*.json ./
-RUN npm install
+RUN PUPPETEER_SKIP_DOWNLOAD=true npm install
 
-# copy source
+# Copy source
 COPY . .
 
-# 🔥 BUILD FRONTEND INSIDE CONTAINER
-# This ensures server.js can serve the exact code Puppeteer sees
+# Build frontend
 RUN npm run build
 
-# Environment variables
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PORT=8080
 
