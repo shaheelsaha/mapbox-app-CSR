@@ -97,7 +97,7 @@ app.post("/render", async (req, res) => {
         await new Promise(r => setTimeout(r, 3000));
 
         // Use public URL on Cloud Run to avoid localhost starvation/timeout
-        const isCloudRun = !!process.env.K_SERVICE;
+        // isCloudRun already defined above
         const targetUrl = isCloudRun
             ? "https://map-animator-4a34c.web.app"
             : `http://localhost:${port}`;
