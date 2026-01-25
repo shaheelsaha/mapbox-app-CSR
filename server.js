@@ -97,7 +97,7 @@ app.post("/render", async (req, res) => {
         await new Promise(r => setTimeout(r, 3000));
 
         await page.goto(`http://localhost:${port}`, {
-            waitUntil: "networkidle0",
+            waitUntil: "domcontentloaded",
             timeout: 120000
         });
 
