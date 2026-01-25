@@ -541,3 +541,5 @@ window.startFlightAutomatically = async (inputCities) => {
 
 
 window.addEventListener('resize', () => map.resize());
+
+console.log("✅ Main.js loaded. window.startFlightAutomatically is:", typeof window.startFlightAutomatically);
