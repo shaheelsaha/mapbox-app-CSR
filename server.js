@@ -96,7 +96,15 @@ app.post("/render", async (req, res) => {
         // Give Express time to boot (Cloud Run cold start safe)
         await new Promise(r => setTimeout(r, 3000));
 
-        await page.goto(`http://localhost:${port}`, {
+        // Use public URL on Cloud Run to avoid localhost starvation/timeout
+        const isCloudRun = !!process.env.K_SERVICE;
+        const targetUrl = isCloudRun
+            ? "https://map-animator-4a34c.web.app"
+            : `http://localhost:${port}`;
+
+        console.log(`🌍 Puppeteer visiting: ${targetUrl}`);
+
+        await page.goto(targetUrl, {
             waitUntil: "domcontentloaded",
             timeout: 120000
         });
