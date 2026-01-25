@@ -8,7 +8,7 @@ app.get("/render", async (req, res) => {
     try {
         const browser = await puppeteer.launch({
             executablePath: "/usr/bin/chromium",   // force system chromium
-            headless: true,                        // ⭐ CRITICAL FIX
+            headless: "shell",                     // ⭐ REAL LEGACY HEADLESS (headless: true = new mode in v22+)
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
