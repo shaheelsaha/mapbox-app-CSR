@@ -78,10 +78,18 @@ app.post("/render", async (req, res) => {
             "--disable-dev-shm-usage"
         ];
 
-        // Only use SwiftShader on Cloud Run (headless CPU environment)
-        if (process.env.K_SERVICE) {
-            launchArgs.push("--use-gl=swiftshader");
-        }
+        // Extensive flags for Headless WebGL support
+        launchArgs.push(
+            "--enable-webgl",
+            "--ignore-gpu-blocklist",
+            "--use-gl=swiftshader",  // Force software rendering for WebGL
+            "--no-first-run",
+            "--hide-scrollbars",
+            "--mute-audio",
+            "--disable-vulkan",      // Simplify graphics pipeline
+            "--disable-gpu-sandbox", // Common fix for docker containers
+            "--disable-accelerated-2d-canvas" // Force software canvas
+        );
 
         const browser = await puppeteer.launch({
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -101,6 +109,14 @@ app.post("/render", async (req, res) => {
         const urlWithCacheBuster = `${PUBLIC_URL}?t=${Date.now()}`;
         console.log("🌍 Opening site:", urlWithCacheBuster);
         await page.goto(urlWithCacheBuster, { waitUntil: "networkidle2", timeout: 120000 });
+
+        // 🔍 DIAGNOSTIC: Check WebGL status
+        const webglStatus = await page.evaluate(() => {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            return gl ? `WebGL Vendor: ${gl.getParameter(gl.VENDOR)}, Renderer: ${gl.getParameter(gl.RENDERER)}` : "❌ WebGL Not Supported";
+        });
+        console.log("🖥️ WebGL Status:", webglStatus);
 
         // Wait for Canvas (Mapbox)
         await page.waitForSelector("canvas", { timeout: 60000 });
