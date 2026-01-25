@@ -93,7 +93,7 @@ app.post("/render", async (req, res) => {
 
         const browser = await puppeteer.launch({
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-            headless: "new",
+            headless: false, // 🟢 XVFB requires headless: false to emulate real display
             args: launchArgs
         });
 
