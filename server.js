@@ -60,7 +60,9 @@ app.post("/render", async (req, res) => {
         console.log("🎬 Render request:", route);
 
         const TOTAL_FRAMES = FPS * duration;
-        const TMP_DIR = process.env.K_SERVICE ? "/tmp" : "./tmp";
+
+        // Always use /tmp on Cloud Run (K_SERVICE), fallback to ./tmp locally
+        const TMP_DIR = process.env.K_SERVICE ? "/tmp" : path.join(__dirname, "tmp");
         const FRAMES_DIR = path.join(TMP_DIR, "frames");
         const OUTPUT = path.join(TMP_DIR, "output.mp4");
 
@@ -132,9 +134,14 @@ app.post("/render", async (req, res) => {
 
         await browser.close();
 
+        // Sanity Check: Log number of frames captured
+        const frameCount = fs.readdirSync(FRAMES_DIR).length;
+        console.log(`📊 Sanity Check: Found ${frameCount} frames in ${FRAMES_DIR}`);
+
         console.log("🎞 Encoding video with ffmpeg...");
 
         // Encode using ffmpeg (using system ffmpeg installed in Docker)
+        // STRICT PATH FIX: Use absolute path for input to avoid confusion
         execSync(
             `ffmpeg -y -framerate ${FPS} -i ${path.join(FRAMES_DIR, "frame_%04d.png")} -pix_fmt yuv420p ${OUTPUT}`
         );
