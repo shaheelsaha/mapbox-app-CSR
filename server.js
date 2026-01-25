@@ -106,16 +106,20 @@ app.post("/render", async (req, res) => {
         await page.waitForSelector("canvas", { timeout: 60000 });
         console.log("✅ Canvas detected. Map loaded.");
 
-        // Wait for explicit signal if you implemented it, otherwise just proceed
-        // await page.waitForFunction(() => window.mapLoaded === true, { timeout: 60000 });
+        // 🟢 WAIT for the global function to be exposed (fixes race conditions)
+        try {
+            await page.waitForFunction(() => typeof window.startFlightAutomatically === 'function', { timeout: 30000 });
+            console.log("✅ Function 'startFlightAutomatically' found!");
+        } catch (e) {
+            console.error("❌ Timed out waiting for startFlightAutomatically!");
+        }
 
         // Start Flight
-        // Note: The public site must expose window.startFlightAutomatically via main.js
         await page.evaluate((cities) => {
             if (window.startFlightAutomatically) {
                 window.startFlightAutomatically(cities);
             } else {
-                console.error("❌ window.startFlightAutomatically not found on public site!");
+                console.error("❌ window.startFlightAutomatically NOT FOUND even after wait!");
             }
         }, route);
 
