@@ -37,17 +37,42 @@
         <input type="text" placeholder="Start Location (e.g. Dubai)" class="location-input" autocomplete="off">
         <div class="suggestions"></div>
       </div>
+
+      <!-- Connection Node -->
+      <div class="connection-line">
+        <select class="travel-mode">
+          <option value="flight">✈️ Flight</option>
+          <option value="drive">🚗 Drive</option>
+        </select>
+      </div>
+
       <div class="input-group">
         <input type="text" placeholder="Destination (e.g. New York)" class="location-input" autocomplete="off">
         <div class="suggestions"></div>
       </div>
     </div>
+
+
     <div class="controls">
       <button id="add-stop" class="btn secondary">+ Add Stop</button>
       <button id="generate-flight" class="btn primary">Preview Flight ▶️</button>
-      <button id="cloud-render" class="btn secondary" style="background: rgba(50, 50, 255, 0.2); color: #6b8aff;">Cloud
-        Render ☁️</button>
+      <button onclick="startExport()" class="btn primary"
+        style="background: rgba(255, 50, 50, 0.2); color: #ff6b6b;">Export Video 🎬</button>
     </div>
+  </div>
+
+  <div id="renderOverlay" style="
+    position:fixed;
+    inset:0;
+    background:#000;
+    color:#fff;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    font-family:sans-serif;
+    z-index:9999;">
+    Rendering video… 0%
   </div>
 
   <div id="video-modal" class="overlay"

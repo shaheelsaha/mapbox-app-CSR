@@ -148,6 +148,55 @@ body {
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
 }
 
+/* Connection Line & Mode Select */
+.connection-line {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: -0.5rem 0;
+  /* Tighten up */
+  position: relative;
+  z-index: 5;
+  height: 40px;
+}
+
+.travel-mode {
+  appearance: none;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.travel-mode:hover {
+  background: #333;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.travel-mode:focus {
+  outline: none;
+  border-color: #FFD166;
+}
+
+/* Vertical connector line */
+.connection-line::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  z-index: -1;
+  transform: translateX(-50%);
+}
+
 .overlay h1 {
   font-size: 1.5rem;
   font-weight: 700;
@@ -176,6 +225,7 @@ body {
 .mapboxgl-ctrl-icon {
   filter: invert(1);
 }
+
 /* Mobile Responsiveness */
 @media (max-width: 600px) {
   .overlay {
@@ -200,7 +250,7 @@ body {
 
   /* Adjust map controls to not be hidden by the sheet */
   .mapboxgl-ctrl-bottom-right {
-    bottom: 250px !important; 
+    bottom: 250px !important;
     right: 10px !important;
   }
 }
