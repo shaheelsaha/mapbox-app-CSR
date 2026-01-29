@@ -50,15 +50,7 @@ export async function drive(map, start, end, pathHistory = []) {
             const lng = p1[0] + (p2[0] - p1[0]) * frac;
             const lat = p1[1] + (p2[1] - p1[1]) * frac;
 
-            /* 🦅 eagle camera */
-            map.easeTo({
-                center: [lng, lat],
-                zoom: SETTINGS.zoom,
-                pitch: SETTINGS.pitch,
-                bearing: SETTINGS.bearing,
-                duration: 80,
-                easing: x => x
-            });
+            window.currentPos = [lng, lat];
 
             /* bearing */
             const dLng = p2[0] - p1[0];

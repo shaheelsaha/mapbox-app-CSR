@@ -2,12 +2,12 @@ import './style.css';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import './export.js';
-import { createCamera } from './camera.js';
+import { createCamera } from './camera-new.js';
 import { drive } from './transports/car.js';
 import { fly } from './transports/flight.js';
 
 // Token from environment variables
-mapboxgl.accessToken = 'pk.eyJ1Ijoic2hhaGVlbDU1IiwiYSI6ImNta2Q0cTNqZTA2cGszZ3M2dzVucDdsOGwifQ.WGhIdum-usVYkJJZOfr9UA';
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
 // 1. Arc Generator Function
 function createArc(start, end, steps = 200, height = 50) {
@@ -35,6 +35,8 @@ const map = window.map = new mapboxgl.Map({
     preserveDrawingBuffer: true, // Required for canvas recording
     attributionControl: false
 });
+
+window.currentPos = null;
 
 map.on('load', () => {
     window.mapLoaded = true;
@@ -384,65 +386,9 @@ document.getElementById('generate-flight').addEventListener('click', async () =>
         }
 
         /* =========================================
-           🚀 MIXED MODE ORCHESTRATOR
+           🚀 MIXED MODE ORCHESTRATOR (Clean)
         ========================================= */
-        /* =========================================
-           🚀 MIXED MODE ORCHESTRATOR
-        ========================================= */
-        const camera = createCamera(map, createArc);
-
-
-        // 1. INTRO
-        if (journeySegments.length > 0) {
-            await camera.intro(journeySegments[0].start);
-        }
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Track path history for progressive drawing
-        let pathHistory = [];
-
-        // 2. LOOP SEGMENTS
-        for (let i = 0; i < journeySegments.length; i++) {
-            const leg = journeySegments[i];
-
-            console.log(`🎬 Starting Leg ${i + 1}: ${leg.mode.toUpperCase()}`);
-
-            if (leg.mode === 'drive') {
-                map.setLayoutProperty('plane-layer', 'icon-image', 'car-icon');
-                map.setLayoutProperty('plane-layer', 'icon-size', [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    4, 0.1,
-                    8, 0.18,
-                    12, 0.25
-                ]);
-                pathHistory = await drive(map, leg.start, leg.end, pathHistory);
-            }
-            else if (leg.mode === 'flight') {
-                map.setLayoutProperty('plane-layer', 'icon-image', 'plane-icon');
-                map.setLayoutProperty('plane-layer', 'icon-size', [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    2, 0.05,
-                    4, 0.1,
-                    6, 0.15
-                ]);
-                pathHistory = await fly(map, leg.start, leg.end, createArc, pathHistory);
-            }
-
-            // Slight pause between segments
-            await new Promise(r => setTimeout(r, 500));
-        }
-
-        // 3. OUTRO
-        if (journeySegments.length > 0) {
-            await camera.outro(journeySegments[journeySegments.length - 1].end);
-        }
-
-        // Hide vehicle after animation
-        map.setLayoutProperty('plane-layer', 'icon-size', 0);
+        await executeJourney(journeySegments);
 
     } catch (error) {
         console.error("❌ Flight generation error:", error);
@@ -457,24 +403,6 @@ document.getElementById('generate-flight').addEventListener('click', async () =>
 });
 
 // Helper: Haversine Distance
-function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-    var R = 6371; // Radius of the earth in km
-    var dLat = deg2rad(lat2 - lat1);
-    var dLon = deg2rad(lon2 - lon1);
-    var a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2)
-        ;
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    var d = R * c; // Distance in km
-    return d;
-}
-
-function deg2rad(deg) {
-    return deg * (Math.PI / 180)
-}
-
 
 // Cloud Render removed - Export Video is now the primary method.
 // Firebase import kept for export.js usage.
@@ -500,162 +428,6 @@ document.getElementById('download-preview').addEventListener('click', () => {
     document.body.removeChild(a);
 });
 
-function startCinematicFlight(waypoints, fullPath) {
-
-    const durationPerSegment = 8000; // 8s between cities (cinematic slow)
-    const totalDuration = durationPerSegment * (waypoints.length - 1);
-
-    const startTime = performance.now();
-
-    // Show plane when flight starts (if using layer opacity, but here we just update position)
-    // If we wanted to hide/show, we could toggle layer visibility. 
-    // For now, let's assume it jumps to start.
-
-
-
-    const EAGLE_PITCH = 8;
-    const CLOSE_ZOOM = 3.5;  // Much closer at cities (Dramatic)
-    const TRAVEL_ZOOM = 1.25; // Wider view mid-flight
-
-    function lerp(a, b, t) {
-        return a + (b - a) * t;
-    }
-
-    function ease(t) {
-        // smooth cinematic easing
-        return t * t * (3 - 2 * t);
-    }
-
-    const routeSource = map.getSource('route');
-
-    // State for smooth camera lag
-    let cameraLng = fullPath[0][0];
-    let cameraLat = fullPath[0][1];
-
-    function updateFrame(t) {
-        if (t > 1) t = 1;
-
-        // which segment we are in
-        const segmentFloat = t * (waypoints.length - 1);
-        const segmentIndex = Math.floor(segmentFloat);
-        const segmentT = segmentFloat - segmentIndex;
-
-        const start = waypoints[segmentIndex];
-        const end = waypoints[Math.min(segmentIndex + 1, waypoints.length - 1)];
-
-        const et = ease(segmentT);
-
-        // interpolate position
-        // progress along arc
-        const headIndex = Math.floor(t * (fullPath.length - 1));
-        const lookAhead = Math.min(headIndex + 5, fullPath.length - 1);
-
-        const head = fullPath[headIndex];
-        const target = fullPath[lookAhead];
-
-        if (!head || !target) {
-            console.error(`❌ Head or Target undefined in updateFrame. t=${t}, headIndex=${headIndex}, lookAhead=${lookAhead}, fullPathLen=${fullPath.length}`);
-            return;
-        }
-
-        const lng = head[0];
-        const lat = head[1];
-
-        // Smooth Camera Lag (Drone Follow Effect)
-        // We lerp current camera position towards the plane's position
-        cameraLng = lerp(cameraLng, lng, 0.05);
-        cameraLat = lerp(cameraLat, lat, 0.05);
-
-        // LOGGING CAMERA MOVEMENT (Sampled)
-        if (Math.random() < 0.05) {
-            console.log(`🎥 Camera Move: t=${t.toFixed(3)}, lng=${lng.toFixed(2)}, lat=${lat.toFixed(2)}`);
-        }
-
-        // calculate bearing toward future point (smooth direction)
-        const bearing = Math.atan2(target[0] - head[0], target[1] - head[1]) * (180 / Math.PI);
-
-        // zoom logic (zoom in near cities, out mid flight)
-        const distToEdge = Math.min(segmentT, 1 - segmentT);
-        const zoomBlend = 1 - distToEdge * 2;
-
-        const zoom = lerp(TRAVEL_ZOOM, CLOSE_ZOOM, zoomBlend);
-
-        // Cinematic Camera: Smooth easeTo + Drone-like tilt & rotation
-        map.easeTo({
-            center: [cameraLng, cameraLat], // Use smoothed camera position
-            zoom,
-            pitch: 60,      // steeper 3D drone view
-            bearing: bearing, // rotate with flight direction
-            duration: 80,   // smooth frame-to-frame smoothing
-            easing: t => t
-        });
-
-        // ✨ ARC DRAW PROGRESSIVELY
-        if (routeSource) {
-            const progressIndex = Math.floor(t * fullPath.length);
-            routeSource.setData({
-                type: 'Feature',
-                geometry: {
-                    type: 'LineString',
-                    coordinates: fullPath.slice(0, progressIndex)
-                }
-            });
-        }
-
-        // ⭐ Plane follow logic (Layer based)
-        const planeSource = map.getSource('plane-source');
-        if (planeSource) {
-
-            // Calculate bearing
-            // Note: atan2(dx, dy) = angle from North (Y axis), which is Mapbox bearing.
-            // dLat is Y, dLng is X. 
-            // Standard Math.atan2(y, x). 
-            // We want bearing (0 is North, 90 is East).
-            // Bearing = atan2(dLng, dLat) * 180 / PI. 
-            // Wait, previous code used atan2(target[0] - lng, target[1] - lat). 
-            // target[0]-lng = dLng (dx). target[1]-lat = dLat (dy).
-            // atan2(dx, dy).
-            // If x=0, y=1 (North), atan2(0, 1) = 0. Correct.
-            // If x=1, y=0 (East), atan2(1, 0) = 90. Correct.
-            // So the formula `Math.atan2(target[0] - lng, target[1] - lat)` is correct for Bearings.
-
-            const angle = Math.atan2(target[0] - lng, target[1] - lat) * 180 / Math.PI;
-
-            planeSource.setData({
-                type: 'Feature',
-                properties: {
-                    bearing: angle
-                },
-                geometry: {
-                    type: 'Point',
-                    coordinates: [lng, lat]
-                }
-            });
-        }
-    }
-
-    // Expose for manual control (Puppeteer)
-    window.renderFrame = (seconds) => {
-        const t = (seconds * 1000) / totalDuration;
-        updateFrame(t);
-    };
-
-    function animate(now) {
-        const elapsed = now - startTime;
-        let t = elapsed / totalDuration;
-
-        updateFrame(t);
-
-        if (t < 1) {
-            requestAnimationFrame(animate);
-        } else {
-            console.log("✅ Animation Complete");
-            window.animationState = 'completed';
-        }
-    }
-
-    requestAnimationFrame(animate);
-}
 
 // Add navigation controls
 map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
@@ -741,17 +513,17 @@ window.startFlightAutomatically = async (input) => {
    Returns a Promise that resolves when animation is complete.
 ========================================= */
 async function executeJourney(segments) {
-    const camera = createCamera(map, createArc);
+    const camera = createCamera(map);
 
     console.log("🚀 executeJourney called with segments:", segments);
 
     // Track path history for progressive drawing
     let pathHistory = [];
 
-    // 1. INTRO
-    if (segments.length > 0) {
-        await camera.intro(segments[0].start);
-    }
+    window.currentPos = segments[0].start;
+
+    camera.start(() => window.currentPos);
+
     await new Promise(r => setTimeout(r, 1000));
 
     // 2. LOOP SEGMENTS
@@ -794,7 +566,7 @@ async function executeJourney(segments) {
 
     // 3. OUTRO
     if (segments.length > 0) {
-        await camera.outro(segments[segments.length - 1].end);
+        camera.stop();
     }
 
     // Hide vehicle after animation
@@ -899,8 +671,8 @@ window.startFlightFromCoords = async (routeStr) => {
         map.moveLayer('plane-layer');
     }
 
-    // Reuse startCinematicFlight
-    startCinematicFlight(coordinates, fullPath, segments);
+    // Use camera.playJourney instead of deprecated startCinematicFlight
+    await executeJourney(segments);
 };
 
 // ✅ ZOOM ANIMATION FOR PUPPETEER
@@ -1033,3 +805,18 @@ window.addEventListener('resize', () => map.resize());
 console.log("✅ Main.js loaded. window.startFlightAutomatically is:", typeof window.startFlightAutomatically);
 console.log("✅ Main.js loaded. window.startZoomAnimation is:", typeof window.startZoomAnimation);
 console.log("✅ Main.js loaded. window.startCanvasRecording is:", typeof window.startCanvasRecording);
+
+// Helper: Haversine Distance
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}

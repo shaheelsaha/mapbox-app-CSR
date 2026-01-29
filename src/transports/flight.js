@@ -29,6 +29,8 @@ export async function fly(map, start, end, createArc, pathHistory = []) {
 
             const [lng, lat] = points[i];
 
+            window.currentPos = [lng, lat];
+
             // 1. Update Plane Icon
             const next = points[i + 1] || points[i];
             const angle = Math.atan2(next[0] - lng, next[1] - lat) * 180 / Math.PI;
@@ -57,14 +59,6 @@ export async function fly(map, start, end, createArc, pathHistory = []) {
                     }
                 });
             }
-
-            // 3. Camera
-            map.jumpTo({
-                center: [lng, lat],
-                zoom: SETTINGS.zoom,
-                pitch: SETTINGS.pitch,
-                bearing: SETTINGS.bearing
-            });
 
             i += SETTINGS.speed;
             requestAnimationFrame(frame);
