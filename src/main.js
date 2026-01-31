@@ -44,6 +44,14 @@ map.on('load', () => {
     window.mapLoaded = true;
     console.log("✅ Map loaded signal sent");
 
+    // Hide loading screen
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+        loadingScreen.classList.add('hidden');
+        // Remove from DOM after fade out
+        setTimeout(() => loadingScreen.remove(), 500);
+    }
+
     map.setFog({
         color: 'rgb(186, 210, 235)', // Lower atmosphere
         'high-color': 'rgb(36, 92, 223)', // Upper atmosphere

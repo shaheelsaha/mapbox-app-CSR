@@ -26,10 +26,61 @@
       width: 100%;
       height: 100%;
     }
+
+    /* Loading Screen */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #0b0b19 0%, #1a1a2e 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: opacity 0.5s ease;
+    }
+
+    #loading-screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .globe-loader {
+      width: 80px;
+      height: 80px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top: 4px solid #4da6ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-text {
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      margin-top: 20px;
+      font-size: 16px;
+      opacity: 0.8;
+    }
   </style>
 </head>
 
 <body>
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="globe-loader"></div>
+    <div class="loading-text">Loading Globe... 🌍</div>
+  </div>
+
   <div id="planner" class="overlay">
     <h1>Flight Planner ✈️</h1>
     <div id="inputs">
