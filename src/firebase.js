@@ -1,14 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// Firebase configuration
+// Firebase configuration (loaded from environment variables)
 const firebaseConfig = {
-    apiKey: "AIzaSyCdVmlvAXMhJPmMY1WZvjUgcHQ_WaP0Zq0",
-    authDomain: "map-animator-4a34c.firebaseapp.com",
-    projectId: "map-animator-4a34c",
-    storageBucket: "map-animator-4a34c.firebasestorage.app",
-    messagingSenderId: "380831293044",
-    appId: "1:380831293044:web:8a0d8ef7cf0925b3fb1f12"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase
