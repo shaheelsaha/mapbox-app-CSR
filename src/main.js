@@ -5,6 +5,8 @@ import './export.js';
 import { createCamera } from './camera-new.js';
 import { drive } from './transports/car.js';
 import { fly } from './transports/flight.js';
+import { train } from './transports/train.js';
+
 
 // Token from environment variables
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -64,6 +66,12 @@ map.on('load', () => {
         else if (!map.hasImage('plane-icon')) map.addImage('plane-icon', image);
     });
 
+    // Load Train Image
+    map.loadImage('/assets/train.png', (error, image) => {
+        if (error) console.error("❌ Failed to load train image", error);
+        else if (!map.hasImage('train-icon')) map.addImage('train-icon', image);
+    });
+
     // Load Car Image (User's Robust Setup)
     map.loadImage('/assets/car.png', (error, image) => {
         if (error) throw error;
@@ -107,8 +115,15 @@ map.on('load', () => {
         }
         console.log("✅ Car/Plane layer added");
     });
-    console.log("✅ Map fully loaded");
-    window.mapLoaded = true; // Signal for Puppeteer
+
+    map.dragPan.enable();
+    map.scrollZoom.enable();
+
+    // lock globe angle
+    map.dragRotate.disable();
+    map.touchZoomRotate.disable();
+
+
 });
 
 // 3. Flight Planner Logic
@@ -227,6 +242,7 @@ document.getElementById('add-stop').addEventListener('click', () => {
         <select class="travel-mode">
           <option value="flight">✈️ Flight</option>
           <option value="drive">🚗 Drive</option>
+          <option value="train">🚂 Train</option>
         </select>
     `;
 
@@ -520,11 +536,14 @@ async function executeJourney(segments) {
     // Track path history for progressive drawing
     let pathHistory = [];
 
+    let currentDistanceKm = 1000;
+
     window.currentPos = segments[0].start;
 
-    camera.start(() => window.currentPos);
+    camera.playIntro(segments[0].start, 4000);  // 🎬 4 seconds for full intro
 
-    await new Promise(r => setTimeout(r, 1000));
+    // ⏳ Wait for intro to finish
+    await new Promise(r => setTimeout(r, 4000));
 
     // 2. LOOP SEGMENTS
     for (let i = 0; i < segments.length; i++) {
@@ -532,41 +551,50 @@ async function executeJourney(segments) {
 
         console.log(`🎬 Starting Leg ${i + 1}: ${leg.mode.toUpperCase()}`);
 
+        camera.startFollow(
+            () => window.currentPos,
+            () => currentDistanceKm,
+            leg.mode
+        );
+
+        currentDistanceKm = getDistanceFromLatLonInKm(
+            leg.start[1], leg.start[0],
+            leg.end[1], leg.end[0]
+        );
+
         if (leg.mode === 'drive') {
+
             map.setLayoutProperty('plane-layer', 'icon-image', 'car-icon');
-            map.setLayoutProperty('plane-layer', 'icon-size', [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                4, 0.1,
-                8, 0.18,
-                12, 0.25
-            ]);
-            // Drive returns new history
+            map.setLayoutProperty('plane-layer', 'icon-size', 0.2); // Show 2D icon
+            map.setLayoutProperty('plane-layer', 'icon-rotate', 0); // ✅ frozen
+
             pathHistory = await drive(map, leg.start, leg.end, pathHistory);
+
         }
-        else if (leg.mode === 'flight') {
+        else if (leg.mode === 'train') {
+
+            map.setLayoutProperty('plane-layer', 'icon-image', 'train-icon');
+            map.setLayoutProperty('plane-layer', 'icon-size', 0.25);
+            map.setLayoutProperty('plane-layer', 'icon-rotate', 0); // ❄️ freeze
+
+            pathHistory = await train(map, leg.start, leg.end, pathHistory);
+
+        }
+        else { // flight
+
             map.setLayoutProperty('plane-layer', 'icon-image', 'plane-icon');
-            map.setLayoutProperty('plane-layer', 'icon-size', [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                2, 0.05,
-                4, 0.1,
-                6, 0.15
-            ]);
-            // Fly returns new history
+            map.setLayoutProperty('plane-layer', 'icon-size', 0.15);
+            map.setLayoutProperty('plane-layer', 'icon-rotate', ['+', ['get', 'bearing'], -45]); // ✅ rotate
+
             pathHistory = await fly(map, leg.start, leg.end, createArc, pathHistory);
         }
 
         await new Promise(r => setTimeout(r, 500));
     }
 
-    await new Promise(r => setTimeout(r, 500));
-
     // 3. OUTRO
     if (segments.length > 0) {
-        camera.stop();
+        camera.playOutro(segments[segments.length - 1].end, 2500);
     }
 
     // Hide vehicle after animation

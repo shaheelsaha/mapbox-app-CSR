@@ -9,12 +9,12 @@ export async function fly(map, start, end, createArc, pathHistory = []) {
 
     let i = 0;
 
-    // 🔒 SETTINGS
-    const SETTINGS = {
+    // 🔒 SETTINGS (exposed globally for manual control)
+    const SETTINGS = window.flightSettings = {
         zoom: 4,
         pitch: 35,
         bearing: 0,
-        speed: 2
+        speed: 1      // 👈 Change via console: window.flightSettings.speed = 1
     };
 
     return new Promise(resolve => {

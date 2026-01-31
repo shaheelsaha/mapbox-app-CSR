@@ -8,10 +8,7 @@ export async function drive(map, start, end, pathHistory = []) {
 
     console.log("🚗 Driving:", start, "→", end);
 
-    // 1. Force Car Icon
-    if (map.getLayer('plane-layer')) {
-        map.setLayoutProperty('plane-layer', 'icon-image', 'car-icon');
-    }
+    // 1. Force Car Icon - REMOVED (Handled in main.js)
 
     // 2. Fetch Route
     async function getDrivingRoute(s, e) {
