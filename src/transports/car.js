@@ -12,7 +12,7 @@ export async function drive(map, start, end, pathHistory = []) {
 
     // 2. Fetch Route
     async function getDrivingRoute(s, e) {
-        const token = 'pk.eyJ1Ijoic2hhaGVlbDU1IiwiYSI6ImNta2Q0cTNqZTA2cGszZ3M2dzVucDdsOGwifQ.WGhIdum-usVYkJJZOfr9UA';
+        const token = window.mapboxgl?.accessToken || import.meta.env.VITE_MAPBOX_TOKEN;
         const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${s[0]},${s[1]};${e[0]},${e[1]}?geometries=geojson&overview=full&access_token=${token}`;
         const res = await fetch(url);
         const data = await res.json();

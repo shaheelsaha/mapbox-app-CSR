@@ -170,7 +170,7 @@ window.startExport = async function () {
         const coordinates = [];
         for (const city of cities) {
             // Use the same geocoding as main.js (via window or inline fetch)
-            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(city)}.json?access_token=${window.map.getContainer().parentElement.querySelector('canvas').__mapbox_gl_token || 'pk.eyJ1Ijoic2hhaGVlbDU1IiwiYSI6ImNta2Q0cTNqZTA2cGszZ3M2dzVucDdsOGwifQ.WGhIdum-usVYkJJZOfr9UA'}&limit=1`;
+            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(city)}.json?access_token=${window.mapboxgl?.accessToken || import.meta.env.VITE_MAPBOX_TOKEN}&limit=1`;
             const resp = await fetch(url);
             const data = await resp.json();
             if (data.features && data.features[0]) {
